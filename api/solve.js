@@ -2,113 +2,134 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const WOLFRAM_APP_ID = process.env.WOLFRAM_APP_ID;
+const DEEPL_API_KEY = process.env.DEEPL_API_KEY; // DeepL API 키 추가
 
-const SYSTEM_PROMPT = `당신은 수학 전문 AI입니다.
-규칙:
-1. 모든 수식, 숫자, 변수는 반드시 LaTeX로 감싸세요. 인라인은 $...$, 블록은 $$...$$
-2. 절대로 ①②③ 같은 특수문자, 한자, 이모지를 사용하지 마세요.
-3. 단계 표시는 반드시 "1.", "2.", "3." 형식만 사용하세요.
-4. 수학과 관련이 없으면 '반대합니다. 저는 수학만을 위한 AI입니다.'라고만 답변하세요.`;
+// ==========================================
+// 1. 수식(LaTeX) 보호 및 복원 유틸리티
+// ==========================================
+function extractAndProtectMath(text) {
+  // $...$ 또는 $$...$$ 형태의 수식을 모두 찾습니다.
+  const mathRegex = /(\$\$[\s\S]*?\$\$|\$.*?\$)/g;
+  const mathBlocks = [];
+  let counter = 0;
 
-// 한국어 수학 표현 → Wolfram이 이해할 수 있는 영어/수식으로 변환
-function toWolframQuery(question) {
-  return question
-    .replace(/의\s*해/g, 'solve')
-    .replace(/적분/g, 'integrate')
-    .replace(/미분/g, 'differentiate')
-    .replace(/극한/g, 'limit')
-    .replace(/인수분해/g, 'factor')
-    .replace(/전개/g, 'expand')
-    .replace(/루트|제곱근/g, 'sqrt')
-    .replace(/로그/g, 'log')
-    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)')
-    .replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)')
-    .replace(/\\int_\{([^}]+)\}\^\{([^}]+)\}/g, 'integrate from $1 to $2')
-    .replace(/\\lim_\{([^}]+)\}/g, 'limit as $1')
-    .replace(/\\infty/g, 'infinity')
-    .replace(/\\pi/g, 'pi')
-    .replace(/\\sin/g, 'sin')
-    .replace(/\\cos/g, 'cos')
-    .replace(/\\tan/g, 'tan')
-    .replace(/\\ln/g, 'ln')
-    .replace(/\\log/g, 'log')
-    .replace(/\^/g, '^')
-    .replace(/[{}\\]/g, '');
+  const protectedText = text.replace(mathRegex, (match) => {
+    const placeholder = ` __MATH_${counter}__ `; // 번역기가 건드리지 않을 특수 단어
+    mathBlocks.push(match);
+    counter++;
+    return placeholder;
+  });
+
+  return { protectedText, mathBlocks };
 }
 
+function restoreMath(text, mathBlocks) {
+  let restoredText = text;
+  mathBlocks.forEach((math, index) => {
+    // 번역된 텍스트에 다시 원래 수식을 끼워 넣습니다.
+    restoredText = restoredText.replace(new RegExp(`\\s*__MATH_${index}__\\s*`, 'g'), ` ${math} `);
+  });
+  return restoredText;
+}
+
+// ==========================================
+// 2. DeepL API를 이용한 영어 번역 (수식 보호 포함)
+// ==========================================
+async function translateToEnglish(krText) {
+  // 수식 숨기기
+  const { protectedText, mathBlocks } = extractAndProtectMath(krText);
+
+  // DeepL 무료 API 호출
+  const response = await fetch("https://api-free.deepl.com/v2/translate", {
+    method: "POST",
+    headers: {
+      "Authorization": `DeepL-Auth-Key ${DEEPL_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      text: [protectedText],
+      target_lang: "EN" // 영어로 번역
+    })
+  });
+
+  if (!response.ok) throw new Error("번역 API 호출 실패");
+  const data = await response.json();
+  const translatedText = data.translations[0].text;
+
+  // 숨겼던 수식 다시 복구하기
+  return restoreMath(translatedText, mathBlocks);
+}
+
+// ==========================================
+// 3. 메인 핸들러
+// ==========================================
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   const { question } = req.body;
   if (!question) return res.status(400).json({ error: "질문이 없습니다." });
 
-  const wolframQuery = toWolframQuery(question);
-  console.log("WOLFRAM QUERY:", wolframQuery);
-
   try {
+    // [단계 1] 질문 번역 (한글 -> 영어, 수식은 그대로 유지)
+    const englishQuery = await translateToEnglish(question);
+    console.log("TRANSLATED QUERY:", englishQuery);
+
+    // [단계 2] WolframAlpha 호출
+    const wolframUrl = `https://api.wolframalpha.com/v2/query?appid=${WOLFRAM_APP_ID}&input=${encodeURIComponent(englishQuery)}&output=JSON&format=plaintext`;
+    const r = await fetch(wolframUrl);
+    const data = await r.json();
+
+    const pods = data.queryresult?.pods;
+    let wolframText = "WolframAlpha 계산 결과 없음 (또는 해석 불가)";
+    if (pods && pods.length > 0) {
+      wolframText = pods
+        .filter(p => p.subpods?.[0]?.plaintext)
+        .map(p => `[${p.title}]\n${p.subpods.map(s => s.plaintext).join('\n')}`)
+        .join('\n\n');
+    }
+
+    // [단계 3] Gemini 최종 해설 생성 시도
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
-    const [geminiResult, wolframResult] = await Promise.allSettled([
-      model.generateContent(`${SYSTEM_PROMPT}\n\n문제: ${question}`),
-      (async () => {
-        const url = `https://api.wolframalpha.com/v2/query?appid=${WOLFRAM_APP_ID}&input=${encodeURIComponent(wolframQuery)}&output=JSON&format=plaintext`;
-        console.log("WOLFRAM URL:", url);
-
-        const r = await fetch(url);
-        console.log("WOLFRAM STATUS:", r.status);
-        if (!r.ok) return `WolframAlpha 오류: ${r.status}`;
-
-        const data = await r.json();
-        console.log("WOLFRAM SUCCESS:", data.queryresult?.success, "PODS:", data.queryresult?.pods?.length);
-
-        const pods = data.queryresult?.pods;
-        if (!pods || pods.length === 0) return "WolframAlpha 계산 결과 없음";
-
-        return pods
-          .filter(p => p.subpods?.[0]?.plaintext)
-          .map(p => `[${p.title}]\n${p.subpods.map(s => s.plaintext).join('\n')}`)
-          .join('\n\n') || "WolframAlpha 계산 결과 없음";
-      })()
-    ]);
-
-    const geminiText = geminiResult.status === "fulfilled"
-      ? geminiResult.value.response.text()
-      : "Gemini 응답 실패";
-
-    const wolframText = wolframResult.status === "fulfilled"
-      ? wolframResult.value
-      : `WolframAlpha 호출 실패: ${wolframResult.reason}`;
-
-    if (geminiText.includes("반대합니다")) {
-      return res.status(200).json({ result: "반대합니다. 저는 수학만을 위한 AI입니다." });
-    }
-
-    const finalPrompt = `사용자 질문: ${question}
-AI 초기 풀이: ${geminiText}
-검증 데이터(WolframAlpha): ${wolframText}
+    const finalPrompt = `사용자 질문(원문): ${question}
+WolframAlpha 계산 결과: ${wolframText}
 
 규칙:
-1. 모든 수식은 반드시 LaTeX($...$ 또는 $$...$$)로 작성하세요.
-2. ①②③ 같은 특수문자, 이모지, 한자는 절대 사용하지 마세요.
-3. 단계는 "1.", "2.", "3." 숫자 형식만 사용하세요.
-4. 위 풀이와 검증 데이터를 비교하여 최종 단계별 풀이를 작성하세요.
-5. 마지막에는 반드시 "최종 결과" 라는 제목 아래 식과 답만 LaTeX로 작성하세요.`;
+1. 위 WolframAlpha의 계산 결과를 바탕으로, 사용자의 원래 질문에 대한 최종 해설을 한국어로 작성하세요.
+2. 모든 수식은 반드시 LaTeX($...$ 또는 $$...$$)로 작성하세요.
+3. ①②③ 같은 특수문자는 사용하지 마세요.
+4. 마지막에는 반드시 "최종 결과" 라는 제목 아래 식과 답만 LaTeX로 작성하세요.`;
 
-    const finalResponse = await model.generateContent(finalPrompt);
-    const finalText = finalResponse.response.text();
+    try {
+      // 제미나이 호출 시도
+      const finalResponse = await model.generateContent(finalPrompt);
+      const finalText = finalResponse.response.text();
 
-    res.status(200).json({
-      result: finalText,
-      geminiDraft: geminiText,
-      wolfram: wolframText,
-      finalPrompt: finalPrompt
-    });
+      // 성공 시: 제미나이의 예쁜 해설 반환
+      return res.status(200).json({
+        status: "SUCCESS",
+        result: finalText,
+        usedGemini: true
+      });
+
+    } catch (geminiError) {
+      // 🚨 제미나이 호출 실패 (429 할당량 초과 등) 🚨
+      console.warn("Gemini Error / Quota Exceeded:", geminiError.message);
+
+      // 제미나이가 뻗었으므로, 울프람의 날 것(Raw) 결과를 사용자에게 반환
+      return res.status(200).json({
+        status: "FALLBACK",
+        result: `*현재 AI 해설 서버에 요청이 많아, 시스템의 원본 계산 결과만 먼저 보여드립니다.*\n\n${wolframText}`,
+        usedGemini: false
+      });
+    }
 
   } catch (error) {
+    // 번역기나 시스템 자체의 치명적인 에러
     console.error("Critical Error:", error);
     res.status(500).json({
-      error: "서버 오류가 발생했습니다.",
+      error: "서버 처리 중 오류가 발생했습니다.",
       details: error.message
     });
   }
