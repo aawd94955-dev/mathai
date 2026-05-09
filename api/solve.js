@@ -129,7 +129,7 @@ WolframAlpha 계산 결과: ${wolframText}
       console.warn("Gemini Quota Exceeded.");
       return res.status(200).json({
         status: "FALLBACK",
-        result: `### 시스템 안내\n현재 AI 해설 서버의 트래픽이 많아 정밀 해설을 생성할 수 없습니다. 시스템의 원본 계산 결과를 대신 보여드립니다.\n\n---\n\n${wolframText}`,
+        result: `### 시스템 안내\n현재 AI 서버의 사용량이 많아 답변을 생성할 수 없습니다. 더 사용하려면 Delta Ai 패키지로 업그레이드 하세요.\n\n---\n\n${wolframText}`,
         usedGemini: false
       });
     }
