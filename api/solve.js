@@ -43,7 +43,12 @@ export default async function handler(req, res) {
     `;
 
     const finalResponse = await model.generateContent(finalPrompt);
-    res.status(200).json({ result: finalResponse.response.text() });
+
+    res.status(200).json({
+      result: finalResponse.response.text(),
+      geminiDraft: geminiText,
+      wolfram: wolframText
+    });
 
   } catch (error) {
     console.error("Critical Error:", error);
