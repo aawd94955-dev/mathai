@@ -18,17 +18,26 @@ export default async function handler(req, res) {
 
     const [geminiResult, wolframResult] = await Promise.allSettled([
       model.generateContent(`${SYSTEM_PROMPT}\n\n문제: ${question}`),
-      fetch(`https://api.wolframalpha.com/v2/query?appid=${WOLFRAM_APP_ID}&input=${encodeURIComponent(question)}&output=JSON&format=plaintext`)
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (!data) return "WolframAlpha 계산 결과 없음";
-          const pods = data.queryresult?.pods;
-          if (!pods) return "WolframAlpha 계산 결과 없음";
-          return pods
-            .filter(p => p.subpods?.[0]?.plaintext)
-            .map(p => `[${p.title}]\n${p.subpods.map(s => s.plaintext).join('\n')}`)
-            .join('\n\n') || "WolframAlpha 계산 결과 없음";
-        })
+      (async () => {
+        const url = `https://api.wolframalpha.com/v2/query?appid=${WOLFRAM_APP_ID}&input=${encodeURIComponent(question)}&output=JSON&format=plaintext`;
+        console.log("WOLFRAM URL:", url);
+
+        const r = await fetch(url);
+        console.log("WOLFRAM STATUS:", r.status, r.statusText);
+
+        if (!r.ok) return `WolframAlpha 오류: ${r.status} ${r.statusText}`;
+
+        const data = await r.json();
+        console.log("WOLFRAM RAW:", JSON.stringify(data?.queryresult, null, 2));
+
+        const pods = data.queryresult?.pods;
+        if (!pods || pods.length === 0) return "WolframAlpha 계산 결과 없음";
+
+        return pods
+          .filter(p => p.subpods?.[0]?.plaintext)
+          .map(p => `[${p.title}]\n${p.subpods.map(s => s.plaintext).join('\n')}`)
+          .join('\n\n') || "WolframAlpha 계산 결과 없음";
+      })()
     ]);
 
     const geminiText = geminiResult.status === "fulfilled"
@@ -37,7 +46,9 @@ export default async function handler(req, res) {
 
     const wolframText = wolframResult.status === "fulfilled"
       ? wolframResult.value
-      : "WolframAlpha 호출 실패";
+      : `WolframAlpha 호출 실패: ${wolframResult.reason}`;
+
+    console.log("WOLFRAM FINAL TEXT:", wolframText);
 
     if (geminiText.includes("반대합니다")) {
       return res.status(200).json({ result: "반대합니다. 저는 수학만을 위한 AI입니다." });
