@@ -8,7 +8,6 @@ const WOLFRAM_APP_ID = process.env.WOLFRAM_APP_ID;
 // ==========================================
 function extractAndProtectMath(text) {
   const mathRegex = /(\$\$[\s\S]*?\$\$|\$.*?\$)/g;
-
   const mathBlocks = [];
   let counter = 0;
 
@@ -24,14 +23,12 @@ function extractAndProtectMath(text) {
 
 function restoreMath(text, mathBlocks) {
   let restoredText = text;
-
   mathBlocks.forEach((math, index) => {
     restoredText = restoredText.replace(
       new RegExp(`\\s*__MATH_${index}__\\s*`, "g"),
       ` ${math} `
     );
   });
-
   return restoredText;
 }
 
@@ -61,13 +58,10 @@ async function translateToEnglish(krText) {
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=en&dt=t&q=${encodeURIComponent(protectedText)}`;
     const response = await fetch(url);
-
     if (!response.ok) throw new Error("번역 서버 응답 실패");
-
     const data = await response.json();
     const translatedText = data[0].map(item => item[0]).join("");
     return restoreMath(translatedText, mathBlocks);
-
   } catch (error) {
     console.error("Translation Error:", error);
     return cleanKr;
@@ -92,7 +86,6 @@ async function tryGeminiModels(genAI, prompt) {
       const model = genAI.getGenerativeModel({ model: modelName });
       const response = await model.generateContent(prompt);
       const text = response.response.text();
-
       if (text && text.trim().length > 0) {
         console.log(`SUCCESS WITH MODEL: ${modelName}`);
         return { success: true, model: modelName, text };
@@ -145,31 +138,23 @@ export default async function handler(req, res) {
     // [3단계] Gemini 해설 생성
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-    const finalPrompt = `사용자 질문(원문): ${question}
+    const finalPrompt = `너는 수학 문제 풀이 전용 AI다. 수학 외의 모든 주제에는 반드시 "### 반대합니다. 저는 수학만을 위해 설계된 Ai입니다." 라고만 답해야 한다. 절대 예외 없다.
 
-WolframAlpha 계산 결과:
+아래는 사용자의 수학 질문과 계산 결과다.
+
+사용자 질문: ${question}
+
+계산 결과:
 ${wolframText}
 
-규칙:
+반드시 아래 규칙을 전부 지켜라. 하나라도 어기면 안 된다.
 
-1. 위 WolframAlpha의 계산 결과를 바탕으로,
-사용자의 원래 질문에 대한 최종 해설을
-한국어로 작성하세요.
-
-2. 모든 수식은 반드시
-LaTeX($...$ 또는 $$...$$)로 작성하세요.
-
-3. ①②③ 같은 특수문자,
-이모지, 한자는 사용하지 마세요.
-
-4. WolframAlpha등을 언급하지 마세요.
-
-5. 만약 사용자가 다른 이야기를 한다면 무조건 '### 반대합니다. 저는 수학만을 위해 설계된 Ai입니다.' 라고 답변하세요.
-
-6. 마지막에는 반드시
-"### 최종 결과"
-라는 제목 아래
-식과 답만 LaTeX로 작성하세요.`;
+[규칙 1] 위 계산 결과를 바탕으로 사용자 질문에 대한 풀이 해설을 한국어로 작성하라.
+[규칙 2] 모든 수식은 반드시 LaTeX로 작성하라. 인라인은 $...$, 블록은 $$...$$를 사용하라.
+[규칙 3] ①②③ 같은 원문자, 이모지, 한자를 절대 사용하지 마라.
+[규칙 4] "WolframAlpha", "계산 엔진" 등 외부 도구를 절대 언급하지 마라.
+[규칙 5] 수학과 관련 없는 질문이면 "### 반대합니다. 저는 수학만을 위해 설계된 Ai입니다." 라고만 답하고 끝내라.
+[규칙 6] 답변 마지막에 반드시 "### 최종 결과" 제목 아래 식과 답만 LaTeX로 작성하라.`;
 
     const geminiResult = await tryGeminiModels(genAI, finalPrompt);
 
@@ -179,8 +164,8 @@ LaTeX($...$ 또는 $$...$$)로 작성하세요.
         status: "SUCCESS",
         result: geminiResult.text,
         wolfram: wolframText,
-        geminiDraft: geminiResult.text,
-        finalPrompt: finalPrompt,
+        geminiDraft: geminiResult.text,  // Gemini 탭: raw 원문
+        finalPrompt: geminiResult.text,  // 전문 원문 탭: 동일하게 raw 텍스트
         usedGemini: true,
         model: geminiResult.model
       });
@@ -202,7 +187,7 @@ Delta Ai 패키지로 업그레이드 하세요.
 ${wolframText}`,
       wolfram: wolframText,
       geminiDraft: "",
-      finalPrompt: finalPrompt,
+      finalPrompt: "",
       usedGemini: false
     });
 
