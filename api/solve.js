@@ -30,31 +30,52 @@ function restoreMath(text, mathBlocks) {
 }
 
 // ==========================================
-// 2. 무료 구글 번역 함수 (카드/키 필요 없음)
+// 2. 한국어 서술형 전처리 (시험지 말투 제거)
+// ==========================================
+function preCleanKorean(text) {
+  return text
+    // 1. 문두의 불필요한 도입부 제거
+    .replace(/다음\s?문제를?\s?풀면[:?\s]*/g, '')
+    .replace(/다음을?\s?계산하시오[:?\s]*/g, '')
+    .replace(/다음을?\s?구하시오[:?\s]*/g, '')
+    // 2. 핵심 키워드를 울프람이 좋아하는 명확한 단어로 암시적 변환
+    .replace(/최댓값을\s?구하시오/g, 'find the maximum value of ')
+    .replace(/최솟값을\s?구하시오/g, 'find the minimum value of ')
+    .replace(/의\s?해를\s?구하시오/g, 'solve ')
+    .replace(/의\s?값을\s?구하시오/g, '')
+    .replace(/에\s?대하여/g, ' for ')
+    .trim();
+}
+
+// ==========================================
+// 3. 무료 구글 번역 함수 (카드/키 필요 없음)
 // ==========================================
 async function translateToEnglish(krText) {
-  const { protectedText, mathBlocks } = extractAndProtectMath(krText);
+  // 번역 전 한국어 수식어 정리
+  const cleanKr = preCleanKorean(krText);
+  
+  // 수식 보호
+  const { protectedText, mathBlocks } = extractAndProtectMath(cleanKr);
 
   try {
-    // 구글 번역 무료 엔드포인트 활용
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=en&dt=t&q=${encodeURIComponent(protectedText)}`;
     
     const response = await fetch(url);
     if (!response.ok) throw new Error("번역 서버 응답 실패");
     
     const data = await response.json();
-    // 구글 번역 응답 구조에서 텍스트 추출
     const translatedText = data[0].map(item => item[0]).join('');
 
+    // 수식 복원
     return restoreMath(translatedText, mathBlocks);
   } catch (error) {
     console.error("Translation Error:", error);
-    return krText; // 번역 실패 시 원본이라도 반환
+    return cleanKr; // 실패 시 전처리된 한글이라도 반환하여 울프람 시도
   }
 }
 
 // ==========================================
-// 3. 메인 핸들러
+// 4. 메인 핸들러
 // ==========================================
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
@@ -63,12 +84,11 @@ export default async function handler(req, res) {
   if (!question) return res.status(400).json({ error: "질문이 없습니다." });
 
   try {
-    // [단계 1] 질문 번역 (한글 -> 영어)
-    // 수식은 보호하면서 울프람이 이해하기 쉽게 영어로 바꿉니다.
+    // [단계 1] 질문 번역 및 최적화
     const englishQuery = await translateToEnglish(question);
-    console.log("TRANSLATED QUERY:", englishQuery);
+    console.log("FINAL OPTIMIZED QUERY:", englishQuery);
 
-    // [단계 2] WolframAlpha 호출 (영문 쿼리 사용)
+    // [단계 2] WolframAlpha 호출
     const wolframUrl = `https://api.wolframalpha.com/v2/query?appid=${WOLFRAM_APP_ID}&input=${encodeURIComponent(englishQuery)}&output=JSON&format=plaintext`;
     const r = await fetch(wolframUrl);
     const data = await r.json();
@@ -84,7 +104,7 @@ export default async function handler(req, res) {
 
     // [단계 3] Gemini 최종 해설 생성 시도
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash" }); // 모델명 확인
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash" }); 
 
     const finalPrompt = `사용자 질문(원문): ${question}
 WolframAlpha 계산 결과: ${wolframText}
@@ -96,7 +116,6 @@ WolframAlpha 계산 결과: ${wolframText}
 4. 마지막에는 반드시 "### 최종 결과" 라는 제목 아래 식과 답만 LaTeX로 작성하세요.`;
 
     try {
-      // 제미나이 호출
       const finalResponse = await model.generateContent(finalPrompt);
       const finalText = finalResponse.response.text();
 
@@ -107,9 +126,7 @@ WolframAlpha 계산 결과: ${wolframText}
       });
 
     } catch (geminiError) {
-      // 🚨 제미나이 할당량 초과 시 (429 에러 등) 🚨
-      console.warn("Gemini Quota Exceeded. Falling back to Wolfram results.");
-
+      console.warn("Gemini Quota Exceeded.");
       return res.status(200).json({
         status: "FALLBACK",
         result: `### 시스템 안내\n현재 AI 해설 서버의 트래픽이 많아 정밀 해설을 생성할 수 없습니다. 시스템의 원본 계산 결과를 대신 보여드립니다.\n\n---\n\n${wolframText}`,
