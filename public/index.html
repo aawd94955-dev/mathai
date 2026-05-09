@@ -22,7 +22,7 @@
       border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: bold; color: #666;
     }
     .tab-btn.active { border-color: var(--primary-color); color: var(--primary-color); background: #eff6ff; }
-    .tab-content { display: none; line-height: 1.8; white-space: pre-wrap; word-break: break-word; }
+    .tab-content { display: none; line-height: 2; word-break: break-word; }
     .tab-content.active { display: block; }
 
     .badge {
@@ -32,6 +32,52 @@
     .badge-final  { background: #16a34a; }
     .badge-gemini { background: #4285f4; }
     .badge-wolfram { background: #ff6b00; }
+
+    /* 최종 결과 강조 박스 */
+    .final-answer-box {
+      background: #f0fdf4;
+      border: 2px solid #16a34a;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      text-align: center;
+      font-size: 1.2em;
+    }
+    .final-answer-label {
+      font-size: 13px;
+      font-weight: bold;
+      color: #16a34a;
+      margin-bottom: 8px;
+    }
+
+    /* 풀이 본문 */
+    .solution-body {
+      white-space: pre-wrap;
+      line-height: 2;
+    }
+
+    /* wolfram plaintext */
+    .wolfram-body {
+      white-space: pre-wrap;
+      font-family: monospace;
+      font-size: 14px;
+      background: #fff7ed;
+      padding: 12px;
+      border-radius: 8px;
+    }
+
+    /* 세부정보(최종 프롬프트) */
+    .detail-box {
+      white-space: pre-wrap;
+      font-family: monospace;
+      font-size: 12px;
+      background: #f1f5f9;
+      padding: 12px;
+      border-radius: 8px;
+      color: #334155;
+      max-height: 400px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
@@ -51,19 +97,35 @@
           <button class="tab-btn active" data-tab="final">✅ 최종 검증 풀이</button>
           <button class="tab-btn" data-tab="gemini">🤖 Gemini 초안</button>
           <button class="tab-btn" data-tab="wolfram">🔢 WolframAlpha</button>
+          <button class="tab-btn" data-tab="detail">🗂 세부 정보</button>
         </div>
 
+        <!-- 최종 검증 풀이 -->
         <div class="tab-content active" id="tab-final">
           <span class="badge badge-final">최종 교차 검증 결과</span>
-          <div id="output-final"></div>
+          <div class="final-answer-box">
+            <div class="final-answer-label">📌 최종 답</div>
+            <div id="output-answer"></div>
+          </div>
+          <div class="solution-body" id="output-final"></div>
         </div>
+
+        <!-- Gemini 초안 -->
         <div class="tab-content" id="tab-gemini">
           <span class="badge badge-gemini">Gemini 초기 풀이</span>
-          <div id="output-gemini"></div>
+          <div class="solution-body" id="output-gemini"></div>
         </div>
+
+        <!-- WolframAlpha -->
         <div class="tab-content" id="tab-wolfram">
           <span class="badge badge-wolfram">WolframAlpha 계산 결과</span>
-          <div id="output-wolfram"></div>
+          <div class="wolfram-body" id="output-wolfram"></div>
+        </div>
+
+        <!-- 세부 정보 -->
+        <div class="tab-content" id="tab-detail">
+          <span class="badge" style="background:#64748b;">최종 프롬프트 전문</span>
+          <div class="detail-box" id="output-detail"></div>
         </div>
       </div>
     </div>
@@ -72,7 +134,6 @@
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
   <script>
-    // 탭 전환
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -91,6 +152,21 @@
         throwOnError: false,
         strict: false
       });
+    }
+
+    // 최종 결과 줄만 추출 (마지막 = 포함 줄 또는 "최종 결과" 이후)
+    function extractFinalAnswer(text) {
+      const lines = text.split('\n');
+      // "최종 결과" 키워드 이후 줄 찾기
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes('최종 결과') || lines[i].includes('최종결과')) {
+          const next = lines.slice(i + 1).find(l => l.trim().length > 0);
+          if (next) return next.trim();
+        }
+      }
+      // fallback: = 기호가 있는 마지막 줄
+      const eqLines = lines.filter(l => l.includes('='));
+      return eqLines.length > 0 ? eqLines[eqLines.length - 1].trim() : '';
     }
 
     const btn = document.getElementById('btn');
@@ -124,13 +200,24 @@
         } else {
           tabArea.style.display = 'block';
 
+          // 최종 답 추출 후 강조 박스
+          const answerText = extractFinalAnswer(data.result || '');
+          document.getElementById('output-answer').innerText = answerText;
+          renderMath(document.getElementById('output-answer'));
+
+          // 풀이 전체
           document.getElementById('output-final').innerText = data.result || '';
+          renderMath(document.getElementById('output-final'));
+
+          // Gemini 초안
           document.getElementById('output-gemini').innerText = data.geminiDraft || '';
-          // wolfram은 plaintext이므로 renderMath 적용 안 함
+          renderMath(document.getElementById('output-gemini'));
+
+          // WolframAlpha (수식 렌더링 안 함)
           document.getElementById('output-wolfram').innerText = data.wolfram || '';
 
-          renderMath(document.getElementById('output-final'));
-          renderMath(document.getElementById('output-gemini'));
+          // 세부 정보 (최종 프롬프트)
+          document.getElementById('output-detail').innerText = data.finalPrompt || '';
         }
       } catch (e) {
         loading.style.display = 'block';
