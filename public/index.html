@@ -339,7 +339,7 @@
     .solution-body {
       font-size: 15px;
       line-height: 2;
-      white-space: pre-wrap;
+      white-space: normal;
       word-break: break-word;
     }
     .wolfram-body {
@@ -808,8 +808,8 @@
           const content = line.replace(/^###\s*/, '');
           return `<div class="out-heading">${content}</div>`;
         }
-        return `<span>${line}</span>`;
-      }).join('\n');
+        return `<span>${line}</span><br>`;
+      }).join('');
       renderMath(el);
     }
 
