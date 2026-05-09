@@ -10,35 +10,28 @@
     body { font-family: sans-serif; background: var(--bg-color); display: flex; justify-content: center; padding: 20px; }
     .container { width: 100%; max-width: 700px; }
     .card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    textarea { width: 100%; height: 100px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
-    button { background: var(--primary-color); color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; float: right; margin-top: 10px; }
-    button:disabled { background: #ccc; }
+    textarea { width: 100%; height: 100px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 15px; }
+    button { background: var(--primary-color); color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; float: right; margin-top: 10px; font-size: 15px; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
     .loading { color: var(--primary-color); font-weight: bold; text-align: center; display: none; padding: 20px; }
     .result-box { display: none; }
 
-    /* 탭 */
     .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
     .tab-btn {
       flex: 1; padding: 10px; border: 2px solid #ddd; background: white;
       border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: bold; color: #666;
     }
     .tab-btn.active { border-color: var(--primary-color); color: var(--primary-color); background: #eff6ff; }
-    .tab-content { display: none; line-height: 1.8; white-space: pre-wrap; }
+    .tab-content { display: none; line-height: 1.8; white-space: pre-wrap; word-break: break-word; }
     .tab-content.active { display: block; }
 
-    /* wolfram 배지 */
-    .wolfram-badge {
-      display: inline-block; background: #ff6b00; color: white;
+    .badge {
+      display: inline-block; color: white;
       font-size: 12px; padding: 2px 8px; border-radius: 4px; margin-bottom: 12px;
     }
-    .gemini-badge {
-      display: inline-block; background: #4285f4; color: white;
-      font-size: 12px; padding: 2px 8px; border-radius: 4px; margin-bottom: 12px;
-    }
-    .final-badge {
-      display: inline-block; background: #16a34a; color: white;
-      font-size: 12px; padding: 2px 8px; border-radius: 4px; margin-bottom: 12px;
-    }
+    .badge-final  { background: #16a34a; }
+    .badge-gemini { background: #4285f4; }
+    .badge-wolfram { background: #ff6b00; }
   </style>
 </head>
 <body>
@@ -55,21 +48,21 @@
 
       <div id="tabArea" style="display:none;">
         <div class="tabs">
-          <button class="tab-btn active" onclick="switchTab('final')">✅ 최종 검증 풀이</button>
-          <button class="tab-btn" onclick="switchTab('gemini')">🤖 Gemini 초안</button>
-          <button class="tab-btn" onclick="switchTab('wolfram')">🔢 WolframAlpha</button>
+          <button class="tab-btn active" data-tab="final">✅ 최종 검증 풀이</button>
+          <button class="tab-btn" data-tab="gemini">🤖 Gemini 초안</button>
+          <button class="tab-btn" data-tab="wolfram">🔢 WolframAlpha</button>
         </div>
 
         <div class="tab-content active" id="tab-final">
-          <span class="final-badge">최종 교차 검증 결과</span>
+          <span class="badge badge-final">최종 교차 검증 결과</span>
           <div id="output-final"></div>
         </div>
         <div class="tab-content" id="tab-gemini">
-          <span class="gemini-badge">Gemini 초기 풀이</span>
+          <span class="badge badge-gemini">Gemini 초기 풀이</span>
           <div id="output-gemini"></div>
         </div>
         <div class="tab-content" id="tab-wolfram">
-          <span class="wolfram-badge">WolframAlpha 계산 결과</span>
+          <span class="badge badge-wolfram">WolframAlpha 계산 결과</span>
           <div id="output-wolfram"></div>
         </div>
       </div>
@@ -79,12 +72,15 @@
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
   <script>
-    function switchTab(name) {
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-      document.getElementById('tab-' + name).classList.add('active');
-      event.target.classList.add('active');
-    }
+    // 탭 전환
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      });
+    });
 
     function renderMath(el) {
       renderMathInElement(el, {
@@ -92,7 +88,8 @@
           { left: '$$', right: '$$', display: true },
           { left: '$', right: '$', display: false }
         ],
-        throwOnError: false
+        throwOnError: false,
+        strict: false
       });
     }
 
@@ -102,13 +99,15 @@
     const loading = document.getElementById('loading');
     const tabArea = document.getElementById('tabArea');
 
-    btn.onclick = async () => {
+    btn.addEventListener('click', async () => {
       const val = input.value.trim();
       if (!val) return;
+
       btn.disabled = true;
       resBox.style.display = 'block';
       tabArea.style.display = 'none';
       loading.style.display = 'block';
+      loading.innerText = '🔍 검증 중... 잠시만 기다려 주세요.';
 
       try {
         const res = await fetch('/api/solve', {
@@ -120,7 +119,6 @@
         loading.style.display = 'none';
 
         if (data.error) {
-          tabArea.style.display = 'none';
           loading.style.display = 'block';
           loading.innerText = '오류: ' + data.error;
         } else {
@@ -128,11 +126,11 @@
 
           document.getElementById('output-final').innerText = data.result || '';
           document.getElementById('output-gemini').innerText = data.geminiDraft || '';
+          // wolfram은 plaintext이므로 renderMath 적용 안 함
           document.getElementById('output-wolfram').innerText = data.wolfram || '';
 
-          ['output-final', 'output-gemini'].forEach(id => {
-            renderMath(document.getElementById(id));
-          });
+          renderMath(document.getElementById('output-final'));
+          renderMath(document.getElementById('output-gemini'));
         }
       } catch (e) {
         loading.style.display = 'block';
@@ -140,7 +138,7 @@
       } finally {
         btn.disabled = false;
       }
-    };
+    });
   </script>
 </body>
 </html>
