@@ -10,11 +10,40 @@ const SYSTEM_PROMPT = `당신은 수학 전문 AI입니다.
 3. 단계 표시는 반드시 "1.", "2.", "3." 형식만 사용하세요.
 4. 수학과 관련이 없으면 '반대합니다. 저는 수학만을 위한 AI입니다.'라고만 답변하세요.`;
 
+// 한국어 수학 표현 → Wolfram이 이해할 수 있는 영어/수식으로 변환
+function toWolframQuery(question) {
+  return question
+    .replace(/의\s*해/g, 'solve')
+    .replace(/적분/g, 'integrate')
+    .replace(/미분/g, 'differentiate')
+    .replace(/극한/g, 'limit')
+    .replace(/인수분해/g, 'factor')
+    .replace(/전개/g, 'expand')
+    .replace(/루트|제곱근/g, 'sqrt')
+    .replace(/로그/g, 'log')
+    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)')
+    .replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)')
+    .replace(/\\int_\{([^}]+)\}\^\{([^}]+)\}/g, 'integrate from $1 to $2')
+    .replace(/\\lim_\{([^}]+)\}/g, 'limit as $1')
+    .replace(/\\infty/g, 'infinity')
+    .replace(/\\pi/g, 'pi')
+    .replace(/\\sin/g, 'sin')
+    .replace(/\\cos/g, 'cos')
+    .replace(/\\tan/g, 'tan')
+    .replace(/\\ln/g, 'ln')
+    .replace(/\\log/g, 'log')
+    .replace(/\^/g, '^')
+    .replace(/[{}\\]/g, '');
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   const { question } = req.body;
   if (!question) return res.status(400).json({ error: "질문이 없습니다." });
+
+  const wolframQuery = toWolframQuery(question);
+  console.log("WOLFRAM QUERY:", wolframQuery);
 
   try {
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
@@ -23,16 +52,15 @@ export default async function handler(req, res) {
     const [geminiResult, wolframResult] = await Promise.allSettled([
       model.generateContent(`${SYSTEM_PROMPT}\n\n문제: ${question}`),
       (async () => {
-        const url = `https://api.wolframalpha.com/v2/query?appid=${WOLFRAM_APP_ID}&input=${encodeURIComponent(question)}&output=JSON&format=plaintext`;
+        const url = `https://api.wolframalpha.com/v2/query?appid=${WOLFRAM_APP_ID}&input=${encodeURIComponent(wolframQuery)}&output=JSON&format=plaintext`;
         console.log("WOLFRAM URL:", url);
 
         const r = await fetch(url);
-        console.log("WOLFRAM STATUS:", r.status, r.statusText);
-
-        if (!r.ok) return `WolframAlpha 오류: ${r.status} ${r.statusText}`;
+        console.log("WOLFRAM STATUS:", r.status);
+        if (!r.ok) return `WolframAlpha 오류: ${r.status}`;
 
         const data = await r.json();
-        console.log("WOLFRAM RAW:", JSON.stringify(data?.queryresult, null, 2));
+        console.log("WOLFRAM SUCCESS:", data.queryresult?.success, "PODS:", data.queryresult?.pods?.length);
 
         const pods = data.queryresult?.pods;
         if (!pods || pods.length === 0) return "WolframAlpha 계산 결과 없음";
