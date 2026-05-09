@@ -6,7 +6,7 @@
   <title>수학 교차 검증 AI</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mathquill@0.10.1/build/mathquill.css">
+  <!-- MathQuill 제거: 한국어 IME 충돌 문제로 인해 사용하지 않음 -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -89,20 +89,9 @@
     }
     .input-wrapper:focus-within { border-color: var(--primary); }
 
-    .mq-editable-field {
-      border: none !important;
-      outline: none !important;
-      min-height: 72px !important;
-      padding: 12px 14px !important;
-      font-size: 16px !important;
-      font-family: 'Pretendard', sans-serif !important;
-      width: 100% !important;
-    }
-    .mq-editable-field.mq-focused { box-shadow: none !important; }
-    .mq-math-mode .mq-root-block { min-height: 40px; }
-
-    #input-fallback {
-      display: block;
+    /* 인라인 LaTeX 에디터 */
+    #math-editor {
+      position: relative;
       width: 100%;
       min-height: 80px;
       padding: 12px 14px;
@@ -111,11 +100,47 @@
       border: none;
       outline: none;
       background: transparent;
-      resize: none;
       color: var(--text-primary);
-      line-height: 1.6;
+      line-height: 1.8;
+      word-break: break-word;
+      white-space: pre-wrap;
+      cursor: text;
     }
-    #input-fallback::placeholder { color: var(--text-tertiary); }
+    #math-editor:empty::before {
+      content: attr(data-placeholder);
+      color: var(--text-tertiary);
+      pointer-events: none;
+    }
+    /* 렌더링된 수식 칩 */
+    .math-chip {
+      display: inline-block;
+      background: #EFF6FF;
+      border: 1px solid #BFDBFE;
+      border-radius: 6px;
+      padding: 1px 6px;
+      margin: 0 2px;
+      cursor: pointer;
+      vertical-align: middle;
+      user-select: none;
+      transition: background 0.12s;
+    }
+    .math-chip:hover { background: #DBEAFE; }
+    .math-chip.display-mode {
+      display: block;
+      text-align: center;
+      margin: 6px 0;
+      padding: 6px 12px;
+      background: #F0F7FF;
+    }
+    /* 수식 입력 중 표시 ($ 입력 후 닫기 전) */
+    .math-typing {
+      background: #FFF9E6;
+      border-radius: 4px;
+      padding: 0 3px;
+      color: #B45309;
+      font-family: 'SF Mono', 'Fira Mono', monospace;
+      font-size: 13px;
+    }
 
     .input-hint { font-size: 12px; color: var(--text-tertiary); margin-top: 8px; }
 
@@ -340,6 +365,15 @@
     }
 
     .katex { font-size: 1em; }
+
+    .out-heading {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 16px 0 6px;
+      letter-spacing: -0.4px;
+    }
+    .out-heading:first-child { margin-top: 0; }
   </style>
 </head>
 <body>
@@ -361,9 +395,12 @@
   <div class="card">
     <div class="input-label">문제 입력</div>
     <div class="input-wrapper" id="inputWrapper">
-      <textarea id="input-fallback" placeholder="수학 문제를 입력하세요 (예: x^2 - 4 = 0의 해)"></textarea>
+      <div id="math-editor"
+           contenteditable="true"
+           spellcheck="false"
+           data-placeholder="수학 문제를 입력하세요 · $x^2-4=0$처럼 $로 감싸면 수식으로 렌더링됩니다"></div>
     </div>
-    <div class="input-hint">LaTeX 입력 지원 · 예: \int_0^1 x\,dx · \lim_{x\to0}\frac{\sin x}{x}</div>
+    <div class="input-hint">$…$ 인라인 수식 · $$…$$ 블록 수식 · 한국어와 혼용 가능</div>
     <div class="btn-row">
       <button class="btn-primary" id="btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -495,32 +532,252 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mathquill@0.10.1/build/mathquill.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+  <!-- MathQuill 제거 -->
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
 
   <script>
-    let mathField = null;
-    let useMathQuill = false;
+    // ─── 인라인 LaTeX 에디터 ───────────────────────────────────────────
+    // contenteditable div: 한국어 IME 완벽 지원 + $...$는 KaTeX로 인라인 렌더링
+    // 내부 데이터 모델: rawText (순수 텍스트, $ 포함) ↔ DOM 렌더링 분리
+
+    let rawText = '';         // 실제 값 (서버로 전송할 텍스트)
+    let isComposing = false;  // IME 조합 중 여부
+
+    // rawText → DOM 렌더링 (커서 위치 보존)
+    function renderEditor() {
+      const editor = document.getElementById('math-editor');
+      const sel = window.getSelection();
+
+      // 커서 오프셋 저장 (rawText 기준 문자 위치)
+      let caretOffset = rawText.length;
+      if (sel && sel.rangeCount > 0) {
+        caretOffset = getCaretCharOffset(editor);
+      }
+
+      // rawText를 파싱해서 HTML 생성
+      editor.innerHTML = buildHTML(rawText);
+
+      // 커서 복원
+      restoreCaretByOffset(editor, caretOffset);
+    }
+
+    // rawText를 토큰으로 파싱 → HTML 문자열 반환
+    function buildHTML(text) {
+      // $$...$$ 먼저, $...$ 다음 순으로 파싱
+      const tokens = [];
+      let i = 0;
+      while (i < text.length) {
+        if (text[i] === '$') {
+          const isDisplay = text[i+1] === '$';
+          const delim = isDisplay ? '$$' : '$';
+          const start = i + delim.length;
+          const end = text.indexOf(delim, start);
+          if (end !== -1) {
+            tokens.push({ type: 'math', src: text.slice(start, end), display: isDisplay });
+            i = end + delim.length;
+            continue;
+          }
+        }
+        // 일반 텍스트
+        const next = text.indexOf('$', i);
+        const chunk = next === -1 ? text.slice(i) : text.slice(i, next);
+        if (chunk) tokens.push({ type: 'text', src: chunk });
+        i = next === -1 ? text.length : next;
+      }
+
+      return tokens.map(tok => {
+        if (tok.type === 'text') {
+          return escapeHtml(tok.src);
+        }
+        try {
+          const rendered = katex.renderToString(tok.src, {
+            throwOnError: false,
+            displayMode: tok.display
+          });
+          const cls = tok.display ? 'math-chip display-mode' : 'math-chip';
+          const raw = (tok.display ? '$$' : '$') + tok.src + (tok.display ? '$$' : '$');
+          return `<span class="${cls}" data-raw="${escapeAttr(raw)}" contenteditable="false">${rendered}</span>`;
+        } catch(e) {
+          return escapeHtml((tok.display ? '$$' : '$') + tok.src + (tok.display ? '$$' : '$'));
+        }
+      }).join('');
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+    }
+    function escapeAttr(s) {
+      return s.replace(/"/g, '&quot;');
+    }
+
+    // DOM → rawText 추출 (수식 칩은 data-raw로, 텍스트 노드는 그대로)
+    function extractRawText(editor) {
+      let result = '';
+      function walk(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          result += node.textContent;
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          if (node.dataset && node.dataset.raw) {
+            result += node.dataset.raw;
+          } else if (node.tagName === 'BR') {
+            result += '\n';
+          } else {
+            for (const child of node.childNodes) walk(child);
+          }
+        }
+      }
+      walk(editor);
+      return result;
+    }
+
+    // 커서 문자 위치 계산 (rawText 기준)
+    function getCaretCharOffset(editor) {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return rawText.length;
+      const range = sel.getRangeAt(0);
+      const preRange = range.cloneRange();
+      preRange.selectNodeContents(editor);
+      preRange.setEnd(range.endContainer, range.endOffset);
+
+      let offset = 0;
+      function walk(node) {
+        if (node === range.endContainer) return true;
+        if (node.nodeType === Node.TEXT_NODE) {
+          if (preRange.toString().length > offset) {
+            offset += node.textContent.length;
+          }
+          return false;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          if (node.dataset && node.dataset.raw) {
+            offset += node.dataset.raw.length;
+            return false;
+          }
+          if (node.tagName === 'BR') { offset += 1; return false; }
+          for (const child of node.childNodes) {
+            if (walk(child)) return true;
+          }
+        }
+        return false;
+      }
+      // 간단하게: preRange.toString() 기반 문자 수 (IME 없을 때 충분)
+      return preRange.toString().replace(/\n/g, '\n').length;
+    }
+
+    // rawText 오프셋으로 커서 복원
+    function restoreCaretByOffset(editor, offset) {
+      const sel = window.getSelection();
+      if (!sel) return;
+      let remaining = offset;
+      let targetNode = null, targetOffset = 0;
+
+      function walk(node) {
+        if (targetNode) return;
+        if (node.nodeType === Node.TEXT_NODE) {
+          if (remaining <= node.textContent.length) {
+            targetNode = node;
+            targetOffset = remaining;
+          } else {
+            remaining -= node.textContent.length;
+          }
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          if (node.dataset && node.dataset.raw) {
+            const len = node.dataset.raw.length;
+            if (remaining <= len) {
+              // 칩 뒤에 커서 놓기
+              targetNode = node.parentNode;
+              targetOffset = Array.from(node.parentNode.childNodes).indexOf(node) + 1;
+            } else {
+              remaining -= len;
+            }
+            return;
+          }
+          if (node.tagName === 'BR') {
+            if (remaining <= 1) {
+              targetNode = node.parentNode;
+              targetOffset = Array.from(node.parentNode.childNodes).indexOf(node) + 1;
+            } else { remaining -= 1; }
+            return;
+          }
+          for (const child of node.childNodes) walk(child);
+        }
+      }
+      walk(editor);
+
+      if (!targetNode) {
+        // 끝으로
+        targetNode = editor;
+        targetOffset = editor.childNodes.length;
+      }
+      try {
+        const range = document.createRange();
+        range.setStart(targetNode, targetOffset);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch(e) {}
+    }
 
     window.addEventListener('load', () => {
-      try {
-        const MQ = MathQuill.getInterface(2);
-        const wrapper = document.getElementById('inputWrapper');
-        document.getElementById('input-fallback').remove();
-        const mqEl = document.createElement('span');
-        wrapper.appendChild(mqEl);
-        mathField = MQ.MathField(mqEl, {
-          spaceBehavesLikeTab: false,
-          handlers: { enter: () => document.getElementById('btn').click() }
-        });
-        useMathQuill = true;
-      } catch(e) {}
+      const editor = document.getElementById('math-editor');
+
+      // IME 조합 추적
+      editor.addEventListener('compositionstart', () => { isComposing = true; });
+      editor.addEventListener('compositionend', () => {
+        isComposing = false;
+        // IME 완성 후 rawText 동기화 → 렌더링
+        rawText = extractRawText(editor);
+        renderEditor();
+      });
+
+      // 일반 입력
+      editor.addEventListener('input', () => {
+        if (isComposing) return; // IME 조합 중엔 건드리지 않음
+        rawText = extractRawText(editor);
+
+        // $...$ 완성 감지: 닫는 $ 입력 시 렌더링
+        // 조건: rawText에 완성된 $...$ 쌍이 있을 때만 렌더링 (입력 중엔 그대로 둠)
+        const hasComplete = /\$\$[^$]+\$\$|\$[^$\n]+\$/.test(rawText);
+        if (hasComplete) renderEditor();
+      });
+
+      // 붙여넣기: 순수 텍스트로만 (서식 제거, 공백 보존)
+      editor.addEventListener('paste', (e) => {
+        e.preventDefault();
+        const text = e.clipboardData.getData('text/plain');
+        document.execCommand('insertText', false, text);
+      });
+
+      // Enter: 제출 (Shift+Enter 줄바꿈)
+      editor.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          document.getElementById('btn').click();
+        }
+      });
+
+      // 수식 칩 클릭 → 편집 모드 (칩을 raw 텍스트로 되돌리기)
+      editor.addEventListener('click', (e) => {
+        const chip = e.target.closest('.math-chip');
+        if (!chip) return;
+        const raw = chip.dataset.raw || '';
+        // 칩을 텍스트 노드로 교체
+        const textNode = document.createTextNode(raw);
+        chip.replaceWith(textNode);
+        rawText = extractRawText(editor);
+        // 커서를 해당 텍스트 끝으로
+        const range = document.createRange();
+        range.setStart(textNode, textNode.length);
+        range.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      });
     });
 
     function getInputValue() {
-      if (useMathQuill && mathField) return mathField.latex();
-      return document.getElementById('input-fallback')?.value?.trim() || '';
+      return rawText.trim();
     }
 
     // 탭
@@ -542,6 +799,18 @@
         throwOnError: false,
         strict: false
       });
+    }
+
+    // ### 헤딩 지원 + KaTeX 렌더링
+    function renderOutput(el, text) {
+      el.innerHTML = (text || '').split('\n').map(line => {
+        if (/^###\s*/.test(line)) {
+          const content = line.replace(/^###\s*/, '');
+          return `<div class="out-heading">${content}</div>`;
+        }
+        return `<span>${line}</span>`;
+      }).join('\n');
+      renderMath(el);
     }
 
     function extractFinalAnswer(text) {
@@ -640,11 +909,8 @@
           document.getElementById('output-answer').innerText = answerText;
           renderMath(document.getElementById('output-answer'));
 
-          document.getElementById('output-final').innerText = data.result || '';
-          renderMath(document.getElementById('output-final'));
-
-          document.getElementById('output-gemini').innerText = data.geminiDraft || '';
-          renderMath(document.getElementById('output-gemini'));
+          renderOutput(document.getElementById('output-final'), data.result);
+          renderOutput(document.getElementById('output-gemini'), data.geminiDraft);
 
           document.getElementById('output-wolfram').innerText = data.wolfram || '';
           document.getElementById('output-detail').innerText = data.finalPrompt || '';
