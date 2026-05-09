@@ -3,8 +3,12 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const WOLFRAM_APP_ID = process.env.WOLFRAM_APP_ID;
 
-const SYSTEM_PROMPT = `당신은 수학 전문 AI입니다. 모든 수식은 반드시 LaTeX($...$ 또는 $$...$$)로 작성하세요.
-수학과 관련이 없으면 '반대합니다. 저는 수학만을 위한 AI입니다.'라고만 답변하세요.`;
+const SYSTEM_PROMPT = `당신은 수학 전문 AI입니다.
+규칙:
+1. 모든 수식, 숫자, 변수는 반드시 LaTeX로 감싸세요. 인라인은 $...$, 블록은 $$...$$
+2. 절대로 ①②③ 같은 특수문자, 한자, 이모지를 사용하지 마세요.
+3. 단계 표시는 반드시 "1.", "2.", "3." 형식만 사용하세요.
+4. 수학과 관련이 없으면 '반대합니다. 저는 수학만을 위한 AI입니다.'라고만 답변하세요.`;
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
@@ -48,26 +52,29 @@ export default async function handler(req, res) {
       ? wolframResult.value
       : `WolframAlpha 호출 실패: ${wolframResult.reason}`;
 
-    console.log("WOLFRAM FINAL TEXT:", wolframText);
-
     if (geminiText.includes("반대합니다")) {
       return res.status(200).json({ result: "반대합니다. 저는 수학만을 위한 AI입니다." });
     }
 
-    const finalPrompt = `
-      사용자 질문: ${question}
-      AI 초기 풀이: ${geminiText}
-      검증 데이터(WolframAlpha): ${wolframText}
-      
-      위 내용을 비교하여 최종적인 단계별 풀이를 LaTeX 형식으로 작성하세요.
-    `;
+    const finalPrompt = `사용자 질문: ${question}
+AI 초기 풀이: ${geminiText}
+검증 데이터(WolframAlpha): ${wolframText}
+
+규칙:
+1. 모든 수식은 반드시 LaTeX($...$ 또는 $$...$$)로 작성하세요.
+2. ①②③ 같은 특수문자, 이모지, 한자는 절대 사용하지 마세요.
+3. 단계는 "1.", "2.", "3." 숫자 형식만 사용하세요.
+4. 위 풀이와 검증 데이터를 비교하여 최종 단계별 풀이를 작성하세요.
+5. 마지막에는 반드시 "최종 결과" 라는 제목 아래 식과 답만 LaTeX로 작성하세요.`;
 
     const finalResponse = await model.generateContent(finalPrompt);
+    const finalText = finalResponse.response.text();
 
     res.status(200).json({
-      result: finalResponse.response.text(),
+      result: finalText,
       geminiDraft: geminiText,
-      wolfram: wolframText
+      wolfram: wolframText,
+      finalPrompt: finalPrompt
     });
 
   } catch (error) {
