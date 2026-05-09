@@ -1,0 +1,7 @@
+{
+  "name": "math-ai-validator",
+  "version": "1.0.0",
+  "dependencies": {
+    "@google/generative-ai": "^0.3.0"
+  }
+}
