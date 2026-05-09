@@ -18,8 +18,17 @@ export default async function handler(req, res) {
 
     const [geminiResult, wolframResult] = await Promise.allSettled([
       model.generateContent(`${SYSTEM_PROMPT}\n\n문제: ${question}`),
-      fetch(`https://api.wolframalpha.com/v1/result?appid=${WOLFRAM_APP_ID}&i=${encodeURIComponent(question)}`)
-        .then(r => r.ok ? r.text() : "WolframAlpha 계산 결과 없음")
+      fetch(`https://api.wolframalpha.com/v2/query?appid=${WOLFRAM_APP_ID}&input=${encodeURIComponent(question)}&output=JSON&format=plaintext`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return "WolframAlpha 계산 결과 없음";
+          const pods = data.queryresult?.pods;
+          if (!pods) return "WolframAlpha 계산 결과 없음";
+          return pods
+            .filter(p => p.subpods?.[0]?.plaintext)
+            .map(p => `[${p.title}]\n${p.subpods.map(s => s.plaintext).join('\n')}`)
+            .join('\n\n') || "WolframAlpha 계산 결과 없음";
+        })
     ]);
 
     const geminiText = geminiResult.status === "fulfilled"
