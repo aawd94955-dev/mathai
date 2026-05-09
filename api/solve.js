@@ -15,10 +15,11 @@ export default async function handler(req, res) {
   try {
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     
-    // 핵심 수정: 'models/' 접두사를 붙여 v1/v1beta 어디서든 모델을 찾을 수 있게 합니다.
-    const model = genAI.getGenerativeModel({ model: "models/gemini-1.5-flash" });
+    // 모델 이름을 'gemini-1.5-flash'로 설정합니다. 
+    // 라이브러리 버전이 최신일 경우 'models/'를 생략하는 것이 가장 안정적입니다.
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    // 1단계: Gemini 초기 풀이 및 WolframAlpha 호출
+    // 1단계: Gemini 초기 풀이 및 WolframAlpha 호출 (병렬 처리)
     const [geminiResult, wolframResult] = await Promise.allSettled([
       model.generateContent(`${SYSTEM_PROMPT}\n\n문제: ${question}`),
       fetch(`https://api.wolframalpha.com/v1/result?appid=${WOLFRAM_APP_ID}&i=${encodeURIComponent(question)}`)
@@ -34,20 +35,13 @@ export default async function handler(req, res) {
     }
 
     // 2단계: 교차 검증 및 최종 답변 생성
-    const finalPrompt = `
-      사용자 질문: ${question}
-      Gemini 풀이: ${geminiText}
-      Wolfram 정답: ${wolframText}
-      
-      위 데이터를 비교하여 오류가 있다면 수정하고, 최종 풀이 과정을 LaTeX로 작성하세요.
-    `;
-    
+    const finalPrompt = `사용자 질문: ${question}\nGemini 풀이: ${geminiText}\nWolfram 정답: ${wolframText}\n위 정보를 비교하여 최종 풀이를 LaTeX로 작성하세요.`;
     const finalResponse = await model.generateContent(finalPrompt);
-    res.status(200).json({ result: finalResponse.response.text() });
 
+    res.status(200).json({ result: finalResponse.response.text() });
   } catch (error) {
-    console.error("Server Error:", error);
-    // 에러 발생 시 사용자에게 구체적인 원인 전달 (404 방지 확인용)
-    res.status(500).json({ error: `서버 에러: ${error.message}` });
+    console.error("Critical Error:", error);
+    // 404 에러가 계속될 경우를 대비해 에러 메시지를 구체적으로 반환합니다.
+    res.status(500).json({ error: `모델 로드 실패: ${error.message}. API 키와 모델명을 확인하세요.` });
   }
 }
