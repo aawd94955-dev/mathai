@@ -126,7 +126,7 @@ export default async function handler(req, res) {
     const wolframData = await wolframResponse.json();
     const pods = wolframData.queryresult?.pods;
 
-    let wolframText = "WolframAlpha에서 유효한 계산 결과를 찾지 못했습니다.";
+    let wolframText = "";
 
     if (pods && pods.length > 0) {
       wolframText = pods
@@ -135,26 +135,27 @@ export default async function handler(req, res) {
         .join("\n\n");
     }
 
+    const wolframSection = wolframText
+      ? `참고할 계산 결과:\n${wolframText}`
+      : `(계산 결과 없음 - 네가 직접 계산하라)`;
+
     // [3단계] Gemini 해설 생성
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-    const finalPrompt = `너는 수학 문제 풀이 전용 AI다. 수학 외의 모든 주제에는 반드시 "### 반대합니다. 저는 수학만을 위해 설계된 Ai입니다." 라고만 답해야 한다. 절대 예외 없다.
-
-아래는 사용자의 수학 질문과 계산 결과다.
+    const finalPrompt = `너는 수학 문제 풀이 전용 AI다.
 
 사용자 질문: ${question}
 
-계산 결과:
-${wolframText}
+${wolframSection}
 
-반드시 아래 규칙을 전부 지켜라. 하나라도 어기면 안 된다.
+아래 규칙을 반드시 모두 지켜라.
 
-[규칙 1] 위 계산 결과를 바탕으로 사용자 질문에 대한 풀이 해설을 한국어로 작성하라.
+[규칙 1] 사용자 질문이 수학과 관련된 내용이면 — 수식, 기호($i^i$, $\\pi$, 방정식, 함수 등 포함 — 반드시 풀이 해설을 한국어로 작성하라. 계산 결과가 없어도 네가 직접 계산해서 답하라.
 [규칙 2] 모든 수식은 반드시 LaTeX로 작성하라. 인라인은 $...$, 블록은 $$...$$를 사용하라.
 [규칙 3] ①②③ 같은 원문자, 이모지, 한자를 절대 사용하지 마라.
 [규칙 4] "WolframAlpha", "계산 엔진" 등 외부 도구를 절대 언급하지 마라.
-[규칙 5] 수학과 관련 없는 질문이면 "### 반대합니다. 저는 수학만을 위해 설계된 Ai입니다." 라고만 답하고 끝내라.
-[규칙 6] 답변 마지막에 반드시 "### 최종 결과" 제목 아래 식과 답만 LaTeX로 작성하라.`;
+[규칙 5] 수학과 완전히 무관한 질문(예: 날씨, 요리, 역사 등)에만 "### 반대합니다. 저는 수학만을 위해 설계된 Ai입니다." 라고만 답하고 끝내라.
+[규칙 6] 수학 문제 답변 마지막에는 반드시 "### 최종 결과" 제목 아래 식과 답만 LaTeX로 작성하라.`;
 
     const geminiResult = await tryGeminiModels(genAI, finalPrompt);
 
@@ -163,9 +164,9 @@ ${wolframText}
       return res.status(200).json({
         status: "SUCCESS",
         result: geminiResult.text,
-        wolfram: wolframText,
-        geminiDraft: geminiResult.text,  // Gemini 탭: raw 원문
-        finalPrompt: geminiResult.text,  // 전문 원문 탭: 동일하게 raw 텍스트
+        wolfram: wolframText || "계산 결과 없음",
+        geminiDraft: geminiResult.text,
+        finalPrompt: geminiResult.text,
         usedGemini: true,
         model: geminiResult.model
       });
@@ -184,8 +185,8 @@ Delta Ai 패키지로 업그레이드 하세요.
 
 ---
 
-${wolframText}`,
-      wolfram: wolframText,
+${wolframText || "계산 결과 없음"}`,
+      wolfram: wolframText || "계산 결과 없음",
       geminiDraft: "",
       finalPrompt: "",
       usedGemini: false
