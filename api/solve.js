@@ -1,39 +1,83 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const WOLFRAM_APP_ID = process.env.WOLFRAM_APP_ID;
+const GEMINI_API_KEY     = process.env.GEMINI_API_KEY;
+const WOLFRAM_APP_ID     = process.env.WOLFRAM_APP_ID;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 // ==========================================
-// 1. 수식(LaTeX) 보호 및 복원 유틸리티
+// 1차 풀이 프롬프트 (GPT·Gemini 공용)
+// ==========================================
+function buildSolvePrompt(question, wolframSection, hasImage) {
+  return `너는 수학 문제 풀이 전용 AI다.
+
+사용자 질문: ${question}${hasImage ? "\n(첨부 이미지 속 수학 문제도 함께 인식하여 풀이하라.)" : ""}
+
+${wolframSection}
+
+[규칙 1] 수식·함수·방정식·극한·적분·미분·수열·수학 기호가 하나라도 포함되면 수학 문제로 간주하고 한국어로 풀이하라.
+[규칙 2] 수학 표현에만 LaTeX 사용. 인라인 $...$, 독립 $$...$$. 일반 문장은 일반 텍스트.
+[규칙 3] ①②③ 같은 원문자, 이모지, 한자, 불필요한 특수문자 사용 금지.
+[규칙 4] WolframAlpha·CAS·Mathematica·Sympy 등 외부 도구 언급 금지.
+[규칙 5] 수학과 무관한 질문이면 "### 반대합니다. 저는 수학만을 위해 설계된 AI입니다." 만 출력하고 종료.
+[규칙 6] 풀이는 논리 비약 없이 단계별로 작성. 미분·적분·극한 중간 과정 생략 금지.
+[규칙 7] 풀기 전 정의역·특수값 대입·분모 0 여부 등 간단한 검증 먼저 수행.
+[규칙 8] 최종 답변 끝에 반드시:
+
+### 최종 결과
+
+(식과 답만 작성, 설명 문장 없음)`;
+}
+
+// ==========================================
+// 교차 검증 프롬프트 (Gemini가 두 풀이 비교)
+// ==========================================
+function buildVerifyPrompt(question, gptDraft, geminiDraft, wolframSection, hasImage) {
+  return `너는 수학 교차 검증 전문 AI다.
+
+원래 문제: ${question}${hasImage ? "\n(이미지 포함 문제)" : ""}
+
+${wolframSection}
+
+아래 두 AI가 각각 독립적으로 풀이한 결과를 교차 검증하라.
+
+=== AI-A (GPT) 풀이 ===
+${gptDraft}
+
+=== AI-B (Gemini) 풀이 ===
+${geminiDraft}
+
+[검증 규칙 1] 두 풀이가 일치하면 해당 답을 최종 채택하고 풀이를 깔끔하게 정리하라.
+[검증 규칙 2] 두 풀이가 다르면 어느 단계에서 차이가 발생했는지 수식으로 정확히 지적하라.
+[검증 규칙 3] 틀린 풀이가 있으면 오류 원인을 설명하고, 올바른 계산을 직접 제시하라.
+[검증 규칙 4] WolframAlpha 결과가 있으면 함께 참고하여 최종 답을 확정하라.
+[검증 규칙 5] 수학 표현에만 LaTeX 사용. 인라인 $...$, 독립 $$...$$.
+[검증 규칙 6] ①②③ 원문자, 이모지, 한자, 외부 도구 언급 금지.
+[검증 규칙 7] 최종 답변 끝에 반드시:
+
+### 최종 결과
+
+(식과 답만 작성, 설명 문장 없음)`;
+}
+
+// ==========================================
+// 수식 보호 / 복원 유틸
 // ==========================================
 function extractAndProtectMath(text) {
-  const mathRegex = /(\$\$[\s\S]*?\$\$|\$.*?\$)/g;
   const mathBlocks = [];
   let counter = 0;
-
-  const protectedText = text.replace(mathRegex, (match) => {
-    const placeholder = ` __MATH_${counter}__ `;
+  const protectedText = text.replace(/(\$\$[\s\S]*?\$\$|\$.*?\$)/g, (match) => {
     mathBlocks.push(match);
-    counter++;
-    return placeholder;
+    return ` __MATH_${counter++}__ `;
   });
-
   return { protectedText, mathBlocks };
 }
-
 function restoreMath(text, mathBlocks) {
-  let restoredText = text;
-  mathBlocks.forEach((math, index) => {
-    restoredText = restoredText.replace(
-      new RegExp(`\\s*__MATH_${index}__\\s*`, "g"),
-      ` ${math} `
-    );
-  });
-  return restoredText;
+  return mathBlocks.reduce((t, math, i) =>
+    t.replace(new RegExp(`\\s*__MATH_${i}__\\s*`, "g"), ` ${math} `), text);
 }
 
 // ==========================================
-// 2. 한국어 서술형 전처리 (시험지 말투 제거)
+// 한국어 전처리
 // ==========================================
 function preCleanKorean(text) {
   return text
@@ -49,230 +93,199 @@ function preCleanKorean(text) {
 }
 
 // ==========================================
-// 3. 무료 구글 번역 함수
+// 번역 (WolframAlpha용)
 // ==========================================
 async function translateToEnglish(krText) {
   const cleanKr = preCleanKorean(krText);
   const { protectedText, mathBlocks } = extractAndProtectMath(cleanKr);
-
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=en&dt=t&q=${encodeURIComponent(protectedText)}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("번역 서버 응답 실패");
-    const data = await response.json();
-    const translatedText = data[0].map(item => item[0]).join("");
-    return restoreMath(translatedText, mathBlocks);
-  } catch (error) {
-    console.error("Translation Error:", error);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("번역 서버 오류");
+    const data = await res.json();
+    return restoreMath(data[0].map(i => i[0]).join(""), mathBlocks);
+  } catch (e) {
+    console.error("Translation Error:", e);
     return cleanKr;
   }
 }
 
 // ==========================================
-// 4. Gemini 모델 순차 시도 함수
+// OpenRouter 호출 (GPT 1차 풀이)
 // ==========================================
-async function tryGeminiModels(genAI, prompt) {
-  const MODEL_PRIORITY = [
-    "gemini-3-flash",
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-2-flash",
-    "gemini-2-flash-lite"
-  ];
+async function callOpenRouter(prompt, imageBase64, imageMime, model = "openai/gpt-4o") {
+  if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY가 설정되지 않았습니다.");
 
-  for (const modelName of MODEL_PRIORITY) {
+  const userContent = (imageBase64 && imageMime)
+    ? [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: imageBase64 } }]
+    : prompt;
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+      "HTTP-Referer": process.env.SITE_URL || "https://your-site.com",
+      "X-Title": "수학 교차 검증 AI"
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 4096,
+      messages: [{ role: "user", content: userContent }]
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenRouter ${res.status}: ${err}`);
+  }
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error("OpenRouter 응답이 비어 있습니다.");
+  return { success: true, model: data.model || model, text };
+}
+
+// ==========================================
+// Gemini 호출 (2차 풀이 + 교차검증)
+// ==========================================
+async function callGemini(prompt, imageBase64, imageMime) {
+  const MODELS = [
+    "gemini-2.5-flash-preview-05-20",
+    "gemini-2.5-pro-preview-05-06",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+  ];
+  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
+  for (const modelName of MODELS) {
     try {
-      console.log(`Trying Gemini model: ${modelName}`);
+      console.log(`Gemini trying: ${modelName}`);
       const model = genAI.getGenerativeModel({ model: modelName });
-      const response = await model.generateContent(prompt);
+
+      let content;
+      if (imageBase64 && imageMime) {
+        const base64Data = imageBase64.replace(/^data:[^;]+;base64,/, "");
+        content = [
+          { text: prompt },
+          { inlineData: { mimeType: imageMime, data: base64Data } }
+        ];
+      } else {
+        content = prompt;
+      }
+
+      const response = await model.generateContent(content);
       const text = response.response.text();
-      if (text && text.trim().length > 0) {
-        console.log(`SUCCESS WITH MODEL: ${modelName}`);
+      if (text?.trim()) {
+        console.log(`Gemini OK: ${modelName}`);
         return { success: true, model: modelName, text };
       }
-    } catch (error) {
-      console.warn(`FAILED MODEL: ${modelName}`);
-      console.warn(error?.message || error);
+    } catch (e) {
+      console.warn(`Gemini FAIL: ${modelName}`, e?.message);
     }
   }
-
   return { success: false, model: null, text: null };
 }
 
 // ==========================================
-// 5. 메인 핸들러
+// 메인 핸들러
 // ==========================================
 export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  if (req.method !== "POST") {
-    return res.status(405).send("Method Not Allowed");
-  }
+  const {
+    question    = "",
+    imageBase64 = null,
+    imageMime   = null,
+    gptModel    = "openai/gpt-4o",
+  } = req.body;
 
-  const { question } = req.body;
+  const hasImage = !!imageBase64;
+  const effectiveQuestion = question || (hasImage ? "이미지 속 수학 문제를 풀어라." : "");
 
-  if (!question) {
+  if (!effectiveQuestion && !hasImage) {
     return res.status(400).json({ error: "질문이 없습니다." });
   }
 
   try {
-
-    // [1단계] 질문 번역 및 최적화
-    const englishQuery = await translateToEnglish(question);
-    console.log("FINAL OPTIMIZED QUERY:", englishQuery);
-
-    // [2단계] WolframAlpha 호출
-    const wolframUrl = `https://api.wolframalpha.com/v2/query?appid=${WOLFRAM_APP_ID}&input=${encodeURIComponent(englishQuery)}&output=JSON&format=plaintext`;
-    const wolframResponse = await fetch(wolframUrl);
-    const wolframData = await wolframResponse.json();
-    const pods = wolframData.queryresult?.pods;
-
+    // ── Step 1: WolframAlpha ──────────────────────────────────────────
     let wolframText = "";
-
-    if (pods && pods.length > 0) {
-      wolframText = pods
-        .filter(p => p.subpods?.[0]?.plaintext)
-        .map(p => `[${p.title}]\n${p.subpods.map(s => s.plaintext).join("\n")}`)
-        .join("\n\n");
+    if (question) {
+      const englishQuery = await translateToEnglish(question);
+      try {
+        const wUrl = `https://api.wolframalpha.com/v2/query?appid=${WOLFRAM_APP_ID}&input=${encodeURIComponent(englishQuery)}&output=JSON&format=plaintext`;
+        const wRes  = await fetch(wUrl);
+        const wData = await wRes.json();
+        const pods  = wData.queryresult?.pods;
+        if (pods?.length) {
+          wolframText = pods
+            .filter(p => p.subpods?.[0]?.plaintext)
+            .map(p => `[${p.title}]\n${p.subpods.map(s => s.plaintext).join("\n")}`)
+            .join("\n\n");
+        }
+      } catch (e) { console.warn("Wolfram 오류:", e.message); }
     }
 
     const wolframSection = wolframText
-      ? `참고할 계산 결과:\n${wolframText}`
-      : `(계산 결과 없음 - 네가 직접 계산하라)`;
+      ? `참고 계산 결과 (WolframAlpha):\n${wolframText}`
+      : "(WolframAlpha 계산 결과 없음)";
 
-    // [3단계] Gemini 해설 생성
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const solvePrompt = buildSolvePrompt(effectiveQuestion, wolframSection, hasImage);
 
-    const finalPrompt = `너는 수학 문제 풀이 전용 AI다.
+    // ── Step 2: GPT(OpenRouter) + Gemini 병렬 1차 풀이 ───────────────
+    console.log("병렬 1차 풀이 시작: GPT + Gemini");
+    const [gptSettled, geminiSettled] = await Promise.allSettled([
+      callOpenRouter(solvePrompt, imageBase64, imageMime, gptModel),
+      callGemini(solvePrompt, imageBase64, imageMime),
+    ]);
 
-사용자 질문: ${question}
+    const gptOk     = gptSettled.status === "fulfilled" && gptSettled.value.success;
+    const geminiOk  = geminiSettled.status === "fulfilled" && geminiSettled.value.success;
 
-${wolframSection}
+    const gptDraft    = gptOk    ? gptSettled.value.text    : `(GPT 풀이 실패: ${gptSettled.reason?.message ?? "오류"})`;
+    const geminiDraft = geminiOk ? geminiSettled.value.text : `(Gemini 풀이 실패: ${geminiSettled.reason?.message ?? "오류"})`;
 
-아래 규칙을 반드시 모두 지켜라.
+    const gptModelUsed    = gptOk    ? gptSettled.value.model    : gptModel;
+    const geminiModelUsed = geminiOk ? geminiSettled.value.model : "gemini-unknown";
 
-[규칙 1]
-사용자 질문에 수식, 함수, 방정식, 극한, 적분, 미분, 수열, 기호($\pi$, $e$, $i$, $\sum$, $\int$ 등)가 하나라도 포함되어 있으면 반드시 수학 문제로 간주하고 한국어로 풀이하라.
+    console.log("GPT:", gptModelUsed, "| Gemini:", geminiModelUsed);
 
-[규칙 2]
-수학 표현에만 LaTeX를 사용하라.
-일반 설명 문장은 일반 텍스트로 작성하라.
+    // ── Step 3: Gemini 교차 검증 ──────────────────────────────────────
+    // 검증 단계는 텍스트만 (두 드래프트가 이미 이미지 내용 반영)
+    console.log("교차 검증 시작...");
+    const verifyPrompt = buildVerifyPrompt(
+      effectiveQuestion, gptDraft, geminiDraft, wolframSection, hasImage
+    );
+    const verifyResult = await callGemini(verifyPrompt, null, null);
 
-인라인 수식은 $...$
-독립 수식은 $$...$$ 를 사용한다.
-
-불필요하게 전체 문장을 수식 블록으로 감싸지 마라.
-
-[규칙 3]
-①, ②, ③ 같은 원문자와 모든 이모지 및 불필요한 특수문자를 사용하지 마라.
-한자 표현도 사용하지 마라.
-
-[규칙 4]
-외부 계산 도구나 사이트를 절대 언급하지 마라.
-예:
-- WolframAlpha
-- 계산 엔진
-- CAS
-- Mathematica
-- Sympy
-등을 언급하는 것을 금지한다.
-
-[규칙 5]
-수학과 무관한 질문에는 반드시 아래 문장만 출력하고 종료하라.
-
-### 반대합니다. 저는 수학만을 위해 설계된 AI입니다.
-
-추가 설명은 절대 하지 마라.
-
-[규칙 6]
-모순이 발견되면 어떤 조건들 사이에서 충돌이 발생했는지 수식으로 명확히 설명하라. 단, 즉시 종료하지 말고 가능한 원인(오타 가능성, 정의역 조건 등)을 추가로 검토한 뒤 최종 결론을 내려라.
-
-[규칙 7]
-사용자가 명시적으로 “가정하고 풀어라”, “억지로 계산해라”, “모순 무시” 등을 요구한 경우에만 추가 가정을 허용한다.
-이 경우 반드시 먼저 아래 문장을 출력하라.
-
-주어진 조건은 모순이므로, 추가 가정을 두고 계산합니다.
-
-그 후 가정을 명확히 적고 계산을 진행하라.
-
-[규칙 8]
-풀이 과정에서는 논리 비약 없이 계산 과정을 단계별로 작성하라.
-미분, 적분, 극한 계산은 중간 과정을 생략하지 마라.
-
-[규칙 9]
-최종 답변 끝에는 반드시 아래 형식을 사용하라.
-
-### 최종 결과
-
-최종 결과 부분에는 식과 답만 작성하라.
-설명 문장은 포함하지 마라.
-
-[규칙 10]
-사용자가 잘못된 풀이를 제시하면,
-틀린 이유를 먼저 정확히 지적한 뒤 올바른 계산을 제시하라.
-
-[규칙 11]
-모순 여부를 판단할 때는 반드시 원래 조건에 직접 대입하여 검증하라.
-특히 적분식은 x=1 같은 경계값을 우선 확인하라.
-
-[규칙 12]
-문제 조건이 충분하지 않아 해가 유일하게 결정되지 않으면 아래 형식으로 답하라.
-
-### 최종 결과
-
-모순 (예: 조건을 만족하는 함수는 존재하지 않는다.)
-
-[규칙 13] 문제를 풀기 전에 가장 간단한 검증부터 수행하라.
-예:
-- 정의역 확인
-- 특수값 대입 (x=0, x=1 등)
-- 분모가 0이 되는지 확인
-- 로그 내부 조건 확인
-- 제곱근 내부 조건 확인
-- 수렴 가능성 확인
-
-간단한 검증만으로 모순이나 불능이 발견되면 즉시 종료하라.
-복잡한 미분방정식 계산이나 불필요한 전개를 먼저 하지 마라.`;
-
-    const geminiResult = await tryGeminiModels(genAI, finalPrompt);
-
-    // [성공]
-    if (geminiResult.success) {
+    if (verifyResult.success) {
       return res.status(200).json({
-        status: "SUCCESS",
-        result: geminiResult.text,
-        wolfram: wolframText || "계산 결과 없음",
-        geminiDraft: geminiResult.text,
-        finalPrompt: geminiResult.text,
-        usedGemini: true,
-        model: geminiResult.model
+        status:       "SUCCESS",
+        result:       verifyResult.text,   // 최종 교차검증 풀이
+        gptDraft,                           // GPT 1차
+        geminiDraft,                        // Gemini 1차
+        wolfram:      wolframText || "계산 결과 없음",
+        hasImage,
+        gptModel:     gptModelUsed,
+        geminiModel:  geminiModelUsed,
+        verifyModel:  verifyResult.model,
       });
     }
 
-    // [전부 실패 → FALLBACK]
+    // 검증 실패 → 성공한 드래프트 반환
     return res.status(200).json({
-      status: "FALLBACK",
-      result: `### 시스템 안내
-
-현재 AI 서버의 사용량이 많아
-답변을 생성할 수 없습니다.
-
-더 사용하려면
-Delta Ai 패키지로 업그레이드 하세요.
-
----
-
-${wolframText || "계산 결과 없음"}`,
-      wolfram: wolframText || "계산 결과 없음",
-      geminiDraft: "",
-      finalPrompt: "",
-      usedGemini: false
+      status:       "PARTIAL",
+      result:       geminiOk ? geminiDraft : gptDraft,
+      gptDraft,
+      geminiDraft,
+      wolfram:      wolframText || "계산 결과 없음",
+      hasImage,
+      gptModel:     gptModelUsed,
+      geminiModel:  geminiModelUsed,
+      verifyModel:  null,
     });
 
   } catch (error) {
     console.error("Critical Error:", error);
-    return res.status(500).json({
-      error: "서버 오류가 발생했습니다.",
-      details: error.message
-    });
+    return res.status(500).json({ error: "서버 오류", details: error.message });
   }
 }
