@@ -6,7 +6,6 @@
   <title>수학 교차 검증 AI</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <!-- MathQuill 제거: 한국어 IME 충돌 문제로 인해 사용하지 않음 -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -24,17 +23,15 @@
       --green-border: #C3F0E0;
       --orange: #F5792A;
       --orange-bg: #FFF7F0;
+      --purple: #7C3AED;
+      --purple-bg: #F5F3FF;
+      --purple-border: #DDD6FE;
       --radius: 16px;
       --radius-sm: 10px;
     }
 
-    html {
-      overflow-y: scroll;
-      scrollbar-width: none; /* Firefox */
-    }
-    html::-webkit-scrollbar {
-      display: none; /* Chrome, Safari */
-    }
+    html { overflow-y: scroll; scrollbar-width: none; }
+    html::-webkit-scrollbar { display: none; }
 
     body {
       font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -47,340 +44,233 @@
       padding: 48px 20px 80px;
     }
 
-    .header {
-      width: 100%;
-      max-width: 640px;
-      margin-bottom: 24px;
-    }
-    .header-top {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 6px;
-    }
+    .header { width: 100%; max-width: 640px; margin-bottom: 24px; }
+    .header-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
     .logo-icon {
-      width: 36px;
-      height: 36px;
-      background: var(--primary);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
+      width: 36px; height: 36px; background: var(--primary);
+      border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
     .logo-icon svg { width: 20px; height: 20px; }
     .header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
     .header p { font-size: 14px; color: var(--text-secondary); padding-left: 46px; }
 
+    /* 흐름 설명 배지 */
+    .flow-badge {
+      display: flex; align-items: center; gap: 6px;
+      padding-left: 46px; margin-top: 8px; flex-wrap: wrap;
+    }
+    .flow-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
+    }
+    .flow-chip.gpt    { background: #EFF6FF; color: var(--primary); border: 1px solid #BFDBFE; }
+    .flow-chip.gemini { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+    .flow-chip.verify { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple-border); }
+    .flow-arrow { font-size: 12px; color: var(--text-tertiary); }
+
     .card {
-      width: 100%;
-      max-width: 640px;
-      background: var(--surface);
-      border-radius: var(--radius);
-      padding: 24px;
-      margin-bottom: 10px;
+      width: 100%; max-width: 640px;
+      background: var(--surface); border-radius: var(--radius);
+      padding: 24px; margin-bottom: 10px;
     }
 
-    .input-label {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      margin-bottom: 10px;
-    }
+    .input-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; }
 
     .input-wrapper {
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius-sm);
-      min-height: 80px;
-      transition: border-color 0.15s;
-      overflow: hidden;
+      border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+      min-height: 80px; transition: border-color 0.15s; overflow: hidden;
     }
     .input-wrapper:focus-within { border-color: var(--primary); }
 
-    /* 인라인 LaTeX 에디터 */
     #math-editor {
-      position: relative;
-      width: 100%;
-      min-height: 80px;
-      padding: 12px 14px;
-      font-size: 15px;
-      font-family: 'Pretendard', sans-serif;
-      border: none;
-      outline: none;
-      background: transparent;
-      color: var(--text-primary);
-      line-height: 1.8;
-      word-break: break-word;
-      white-space: pre-wrap;
-      cursor: text;
+      width: 100%; min-height: 80px; padding: 12px 14px;
+      font-size: 15px; font-family: 'Pretendard', sans-serif;
+      border: none; outline: none; background: transparent;
+      color: var(--text-primary); line-height: 1.8;
+      word-break: break-word; white-space: pre-wrap; cursor: text;
     }
     #math-editor:empty::before {
-      content: attr(data-placeholder);
-      color: var(--text-tertiary);
-      pointer-events: none;
+      content: attr(data-placeholder); color: var(--text-tertiary); pointer-events: none;
     }
-    /* 렌더링된 수식 칩 */
     .math-chip {
-      display: inline-block;
-      background: #EFF6FF;
-      border: 1px solid #BFDBFE;
-      border-radius: 6px;
-      padding: 1px 6px;
-      margin: 0 2px;
-      cursor: pointer;
-      vertical-align: middle;
-      user-select: none;
-      transition: background 0.12s;
+      display: inline-block; background: #EFF6FF; border: 1px solid #BFDBFE;
+      border-radius: 6px; padding: 1px 6px; margin: 0 2px;
+      cursor: pointer; vertical-align: middle; user-select: none; transition: background 0.12s;
     }
     .math-chip:hover { background: #DBEAFE; }
     .math-chip.display-mode {
-      display: block;
-      text-align: center;
-      margin: 6px 0;
-      padding: 6px 12px;
-      background: #F0F7FF;
+      display: block; text-align: center; margin: 6px 0; padding: 6px 12px; background: #F0F7FF;
     }
-    /* 수식 입력 중 표시 ($ 입력 후 닫기 전) */
-    .math-typing {
-      background: #FFF9E6;
-      border-radius: 4px;
-      padding: 0 3px;
-      color: #B45309;
-      font-family: 'SF Mono', 'Fira Mono', monospace;
-      font-size: 13px;
+
+    /* 이미지 업로드 */
+    .image-upload-area {
+      border: 1.5px dashed var(--border); border-radius: var(--radius-sm);
+      padding: 14px; margin-top: 10px;
+      display: flex; align-items: center; gap: 12px;
+      cursor: pointer; transition: all 0.15s; position: relative;
     }
+    .image-upload-area:hover { border-color: var(--primary); background: #F6F9FF; }
+    .image-upload-area.drag-over { border-color: var(--primary); background: #EFF6FF; }
+    .image-upload-area.has-image { border-style: solid; border-color: var(--green-border); background: var(--green-bg); }
+    #image-file-input { display: none; }
+    .upload-icon {
+      width: 34px; height: 34px; flex-shrink: 0; background: var(--bg);
+      border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--text-tertiary);
+    }
+    .upload-icon svg { width: 16px; height: 16px; }
+    .upload-text .upload-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+    .upload-text .upload-desc { font-size: 12px; color: var(--text-tertiary); margin-top: 1px; }
+
+    .image-preview-wrap {
+      display: none; margin-top: 10px; position: relative;
+      border-radius: var(--radius-sm); overflow: hidden; max-height: 220px;
+    }
+    .image-preview-wrap img {
+      width: 100%; max-height: 220px; object-fit: contain;
+      border-radius: var(--radius-sm); background: var(--bg); display: block;
+    }
+    .image-remove-btn {
+      position: absolute; top: 8px; right: 8px;
+      width: 26px; height: 26px; background: rgba(0,0,0,0.55); color: white;
+      border: none; border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; cursor: pointer; font-size: 14px; transition: background 0.15s;
+    }
+    .image-remove-btn:hover { background: rgba(0,0,0,0.75); }
+
+    /* GPT 모델 선택 */
+    .model-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 14px; flex-wrap: wrap;
+    }
+    .model-label { font-size: 12px; font-weight: 600; color: var(--text-tertiary); white-space: nowrap; }
+    .model-chip {
+      padding: 5px 12px; border-radius: 20px; border: 1.5px solid var(--border);
+      background: var(--bg); font-size: 12px; font-weight: 600;
+      font-family: 'Pretendard', sans-serif; color: var(--text-secondary);
+      cursor: pointer; transition: all 0.15s;
+    }
+    .model-chip:hover { border-color: var(--primary); color: var(--primary); }
+    .model-chip.active { border-color: var(--primary); background: #EFF6FF; color: var(--primary); }
 
     .input-hint { font-size: 12px; color: var(--text-tertiary); margin-top: 8px; }
 
-    .btn-row {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: 16px;
-    }
+    .btn-row { display: flex; justify-content: flex-end; margin-top: 16px; }
     .btn-primary {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--primary);
-      color: white;
-      border: none;
-      padding: 11px 20px;
-      border-radius: var(--radius-sm);
-      font-size: 15px;
-      font-weight: 600;
-      font-family: 'Pretendard', sans-serif;
-      cursor: pointer;
-      letter-spacing: -0.2px;
-      transition: background 0.15s;
-      white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--primary); color: white; border: none;
+      padding: 11px 20px; border-radius: var(--radius-sm);
+      font-size: 15px; font-weight: 600; font-family: 'Pretendard', sans-serif;
+      cursor: pointer; letter-spacing: -0.2px; transition: background 0.15s; white-space: nowrap;
     }
     .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
     .btn-primary:disabled { background: var(--border); color: var(--text-tertiary); cursor: not-allowed; }
     .btn-primary svg { width: 15px; height: 15px; flex-shrink: 0; }
 
-    /* 단계별 로딩 */
+    /* 로딩 */
     .loading-card {
-      display: none;
-      width: 100%;
-      max-width: 640px;
-      background: var(--surface);
-      border-radius: var(--radius);
-      padding: 28px 24px;
-      margin-bottom: 10px;
+      display: none; width: 100%; max-width: 640px;
+      background: var(--surface); border-radius: var(--radius);
+      padding: 28px 24px; margin-bottom: 10px;
     }
-    .loading-steps {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    .loading-step {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+    .loading-steps { display: flex; flex-direction: column; gap: 14px; }
+    .loading-step { display: flex; align-items: center; gap: 12px; }
     .step-icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      transition: all 0.3s;
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: all 0.3s;
     }
     .step-icon svg { width: 15px; height: 15px; }
-    .step-icon.waiting {
-      background: var(--bg);
-      color: var(--text-tertiary);
-      border: 1.5px solid var(--border);
-    }
-    .step-icon.running {
-      background: #EFF6FF;
-      color: var(--primary);
-      border: 1.5px solid #BFDBFE;
-    }
+    .step-icon.waiting { background: var(--bg); color: var(--text-tertiary); border: 1.5px solid var(--border); }
+    .step-icon.running { background: #EFF6FF; color: var(--primary); border: 1.5px solid #BFDBFE; }
     .step-icon.running .spin-ring {
-      width: 15px; height: 15px;
-      border: 2px solid #BFDBFE;
-      border-top-color: var(--primary);
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
+      width: 15px; height: 15px; border: 2px solid #BFDBFE;
+      border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite;
     }
-    .step-icon.done {
-      background: var(--green-bg);
-      color: var(--green);
-      border: 1.5px solid var(--green-border);
-    }
+    .step-icon.done { background: var(--green-bg); color: var(--green); border: 1.5px solid var(--green-border); }
+    .step-icon.done-purple { background: var(--purple-bg); color: var(--purple); border: 1.5px solid var(--purple-border); }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .step-info { flex: 1; }
-    .step-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text-primary);
-      letter-spacing: -0.2px;
-    }
+    .step-title { font-size: 14px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.2px; }
     .step-title.waiting { color: var(--text-tertiary); }
-    .step-desc {
-      font-size: 12px;
-      color: var(--text-secondary);
-      margin-top: 2px;
-    }
+    .step-desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
     .step-desc.waiting { color: var(--text-tertiary); }
+    .step-divider { width: 1.5px; height: 14px; background: var(--border); margin-left: 15px; }
 
-    .step-divider {
-      width: 1.5px;
-      height: 14px;
-      background: var(--border);
-      margin-left: 15px;
-    }
-
-    /* 결과 영역 */
-    .result-area {
-      display: none;
-      width: 100%;
-      max-width: 640px;
-      margin: 0 auto;
-    }
+    /* 결과 */
+    .result-area { display: none; width: 100%; max-width: 640px; }
 
     .answer-box {
-      background: var(--green-bg);
-      border: 1.5px solid var(--green-border);
-      border-radius: var(--radius);
-      padding: 20px 24px;
-      margin-bottom: 10px;
+      background: var(--purple-bg); border: 1.5px solid var(--purple-border);
+      border-radius: var(--radius); padding: 20px 24px; margin-bottom: 10px;
     }
     .answer-label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--green);
-      letter-spacing: 0.6px;
-      text-transform: uppercase;
-      margin-bottom: 12px;
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 700; color: var(--purple);
+      letter-spacing: 0.6px; text-transform: uppercase; margin-bottom: 12px;
     }
     .answer-label svg { width: 13px; height: 13px; }
-    .answer-content {
-      font-size: 20px;
-      font-weight: 700;
-      text-align: center;
-      line-height: 1.8;
+    .answer-content { font-size: 20px; font-weight: 700; text-align: center; line-height: 1.8; }
+
+    /* 모델 정보 줄 */
+    .model-info-row {
+      display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;
     }
+    .model-info-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px;
+    }
+    .mic-gpt    { background: #EFF6FF; color: var(--primary); border: 1px solid #BFDBFE; }
+    .mic-gemini { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+    .mic-verify { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple-border); }
 
     .tab-bar {
-      display: flex;
-      gap: 4px;
-      background: var(--surface);
-      border-radius: var(--radius-sm);
-      padding: 4px;
-      margin-bottom: 10px;
+      display: flex; gap: 4px; background: var(--surface);
+      border-radius: var(--radius-sm); padding: 4px; margin-bottom: 10px;
     }
     .tab-btn {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 5px;
-      padding: 9px 4px;
-      border: none;
-      background: transparent;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      font-family: 'Pretendard', sans-serif;
-      color: var(--text-tertiary);
-      cursor: pointer;
-      transition: all 0.15s;
-      letter-spacing: -0.2px;
-      white-space: nowrap;
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+      padding: 9px 4px; border: none; background: transparent; border-radius: 8px;
+      font-size: 12px; font-weight: 600; font-family: 'Pretendard', sans-serif;
+      color: var(--text-tertiary); cursor: pointer; transition: all 0.15s;
+      letter-spacing: -0.2px; white-space: nowrap;
     }
-    .tab-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+    .tab-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
     .tab-btn.active { background: var(--bg); color: var(--text-primary); }
 
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
-    .solution-card {
-      background: var(--surface);
-      border-radius: var(--radius);
-      padding: 24px;
-    }
+    .solution-card { background: var(--surface); border-radius: var(--radius); padding: 24px; }
     .section-label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-      margin-bottom: 16px;
-      padding-bottom: 14px;
-      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+      margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border);
     }
     .section-label svg { width: 13px; height: 13px; }
     .label-green  { color: var(--green); }
     .label-blue   { color: var(--primary); }
     .label-orange { color: var(--orange); }
     .label-gray   { color: var(--text-secondary); }
+    .label-purple { color: var(--purple); }
 
-    .solution-body {
-      font-size: 15px;
-      line-height: 2;
-      white-space: normal;
-      word-break: break-word;
-    }
+    .solution-body { font-size: 15px; line-height: 2; white-space: normal; word-break: break-word; }
     .wolfram-body {
-      font-size: 13px;
-      line-height: 1.8;
-      white-space: pre-wrap;
+      font-size: 13px; line-height: 1.8; white-space: pre-wrap;
       font-family: 'SF Mono', 'Fira Mono', monospace;
-      background: var(--orange-bg);
-      border-radius: var(--radius-sm);
-      padding: 16px;
+      background: var(--orange-bg); border-radius: var(--radius-sm); padding: 16px;
     }
     .detail-body {
-      font-size: 12px;
-      line-height: 1.7;
-      color: var(--text-secondary);
-      white-space: pre-wrap;
-      font-family: 'SF Mono', 'Fira Mono', monospace;
-      background: var(--bg);
-      border-radius: var(--radius-sm);
-      padding: 16px;
-      max-height: 400px;
-      overflow-y: auto;
+      font-size: 12px; line-height: 1.7; color: var(--text-secondary);
+      white-space: pre-wrap; font-family: 'SF Mono', 'Fira Mono', monospace;
+      background: var(--bg); border-radius: var(--radius-sm); padding: 16px;
+      max-height: 400px; overflow-y: auto;
     }
 
     .katex { font-size: 1em; }
-
     .out-heading {
-      font-size: 17px;
-      font-weight: 700;
-      color: var(--text-primary);
-      margin: 16px 0 6px;
-      letter-spacing: -0.4px;
+      font-size: 17px; font-weight: 700; color: var(--text-primary);
+      margin: 16px 0 6px; letter-spacing: -0.4px;
     }
     .out-heading:first-child { margin-top: 0; }
   </style>
@@ -398,18 +288,51 @@
       </div>
       <h1>수학 교차 검증 AI</h1>
     </div>
-    <p>Gemini × WolframAlpha 이중 검증 풀이 서비스</p>
+    <div class="flow-badge">
+      <span class="flow-chip gpt">GPT 1차 풀이</span>
+      <span class="flow-arrow">+</span>
+      <span class="flow-chip gemini">Gemini 1차 풀이</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-chip verify">Gemini 교차검증</span>
+    </div>
   </div>
 
   <div class="card">
     <div class="input-label">문제 입력</div>
-    <div class="input-wrapper" id="inputWrapper">
-      <div id="math-editor"
-           contenteditable="true"
-           spellcheck="false"
-           data-placeholder="수학 문제를 입력하세요 · $x^2-4=0$처럼 $로 감싸면 수식으로 렌더링됩니다"></div>
+    <div class="input-wrapper">
+      <div id="math-editor" contenteditable="true" spellcheck="false"
+           data-placeholder="수학 문제를 입력하세요 · $x^2-4=0$처럼 $로 감싸면 수식 렌더링"></div>
     </div>
-    <div class="input-hint">$…$ 인라인 수식 · $$…$$ 블록 수식 · 한국어와 혼용 가능</div>
+
+    <!-- 이미지 업로드 -->
+    <div class="image-upload-area" id="uploadArea">
+      <input type="file" id="image-file-input" accept="image/*">
+      <div class="upload-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+      </div>
+      <div class="upload-text">
+        <div class="upload-title">사진 업로드 (선택)</div>
+        <div class="upload-desc">수학 문제 사진 · 클릭 또는 드래그 · JPG, PNG, WEBP</div>
+      </div>
+    </div>
+    <div class="image-preview-wrap" id="imagePreviewWrap">
+      <img id="imagePreview" src="" alt="업로드 이미지">
+      <button class="image-remove-btn" id="imageRemoveBtn">✕</button>
+    </div>
+
+    <!-- GPT 모델 선택 -->
+    <div class="model-row">
+      <span class="model-label">GPT 모델</span>
+      <button class="model-chip active" data-gpt="openai/gpt-4o">GPT-4o</button>
+      <button class="model-chip" data-gpt="openai/gpt-4o-mini">GPT-4o mini</button>
+      <button class="model-chip" data-gpt="openai/o3-mini">o3-mini</button>
+      <button class="model-chip" data-gpt="openai/gpt-4.1">GPT-4.1</button>
+    </div>
+
+    <div class="input-hint">$…$ 인라인 수식 · $$…$$ 블록 수식 · 사진 업로드 시 이미지 인식 자동 포함</div>
     <div class="btn-row">
       <button class="btn-primary" id="btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -420,11 +343,11 @@
     </div>
   </div>
 
-  <!-- 단계별 로딩 -->
+  <!-- 로딩 -->
   <div class="loading-card" id="loadingCard">
     <div class="loading-steps">
 
-      <div class="loading-step" id="step-wolfram">
+      <div class="loading-step">
         <div class="step-icon waiting" id="step-wolfram-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/>
@@ -438,21 +361,35 @@
 
       <div class="step-divider"></div>
 
-      <div class="loading-step" id="step-gemini1">
-        <div class="step-icon waiting" id="step-gemini1-icon">
+      <div class="loading-step">
+        <div class="step-icon waiting" id="step-gpt-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
           </svg>
         </div>
         <div class="step-info">
-          <div class="step-title waiting" id="step-gemini1-title">Gemini 초기 풀이</div>
-          <div class="step-desc waiting" id="step-gemini1-desc">AI가 문제를 단계별로 분석합니다</div>
+          <div class="step-title waiting" id="step-gpt-title">GPT 1차 풀이</div>
+          <div class="step-desc waiting" id="step-gpt-desc">OpenRouter GPT가 문제를 분석합니다</div>
         </div>
       </div>
 
       <div class="step-divider"></div>
 
-      <div class="loading-step" id="step-verify">
+      <div class="loading-step">
+        <div class="step-icon waiting" id="step-gemini-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+          </svg>
+        </div>
+        <div class="step-info">
+          <div class="step-title waiting" id="step-gemini-title">Gemini 1차 풀이</div>
+          <div class="step-desc waiting" id="step-gemini-desc">Gemini가 독립적으로 풀이합니다</div>
+        </div>
+      </div>
+
+      <div class="step-divider"></div>
+
+      <div class="loading-step">
         <div class="step-icon waiting" id="step-verify-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
@@ -460,29 +397,36 @@
         </div>
         <div class="step-info">
           <div class="step-title waiting" id="step-verify-title">교차 검증</div>
-          <div class="step-desc waiting" id="step-verify-desc">두 결과를 비교해 최종 풀이를 생성합니다</div>
+          <div class="step-desc waiting" id="step-verify-desc">Gemini가 두 풀이를 비교·검증합니다</div>
         </div>
       </div>
 
     </div>
   </div>
 
+  <!-- 결과 -->
   <div class="result-area" id="resultArea">
 
     <div class="answer-box">
       <div class="answer-label">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="20 6 9 17 4 12"/>
+          <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
         </svg>
-        최종 답
+        교차 검증 최종 답
       </div>
       <div class="answer-content" id="output-answer"></div>
     </div>
 
+    <div class="model-info-row" id="modelInfoRow"></div>
+
     <div class="tab-bar">
       <button class="tab-btn active" data-tab="final">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/></svg>
         최종 풀이
+      </button>
+      <button class="tab-btn" data-tab="gpt">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        GPT
       </button>
       <button class="tab-btn" data-tab="gemini">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -494,25 +438,35 @@
       </button>
       <button class="tab-btn" data-tab="detail">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        세부 정보
+        세부
       </button>
     </div>
 
     <div class="tab-content active" id="tab-final">
       <div class="solution-card">
-        <div class="section-label label-green">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          교차 검증 최종 풀이
+        <div class="section-label label-purple">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/></svg>
+          Gemini 교차 검증 최종 풀이
         </div>
         <div class="solution-body" id="output-final"></div>
       </div>
     </div>
 
-    <div class="tab-content" id="tab-gemini">
+    <div class="tab-content" id="tab-gpt">
       <div class="solution-card">
         <div class="section-label label-blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+          GPT 1차 풀이 (OpenRouter)
+        </div>
+        <div class="solution-body" id="output-gpt"></div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-gemini">
+      <div class="solution-card">
+        <div class="section-label label-green">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          Gemini 초기 풀이
+          Gemini 1차 풀이
         </div>
         <div class="solution-body" id="output-gemini"></div>
       </div>
@@ -532,7 +486,7 @@
       <div class="solution-card">
         <div class="section-label label-gray">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          최종 프롬프트 전문
+          세부 정보
         </div>
         <div class="detail-body" id="output-detail"></div>
       </div>
@@ -540,40 +494,19 @@
 
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-  <!-- MathQuill 제거 -->
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
 
   <script>
-    // ─── 인라인 LaTeX 에디터 ───────────────────────────────────────────
-    // contenteditable div: 한국어 IME 완벽 지원 + $...$는 KaTeX로 인라인 렌더링
-    // 내부 데이터 모델: rawText (순수 텍스트, $ 포함) ↔ DOM 렌더링 분리
+    // ─── 상태 ─────────────────────────────────────────────────────────
+    let rawText = '';
+    let isComposing = false;
+    let uploadedImageBase64 = null;
+    let uploadedImageMime   = null;
+    let selectedGptModel    = 'openai/gpt-4o';
 
-    let rawText = '';         // 실제 값 (서버로 전송할 텍스트)
-    let isComposing = false;  // IME 조합 중 여부
-
-    // rawText → DOM 렌더링 (커서 위치 보존)
-    function renderEditor() {
-      const editor = document.getElementById('math-editor');
-      const sel = window.getSelection();
-
-      // 커서 오프셋 저장 (rawText 기준 문자 위치)
-      let caretOffset = rawText.length;
-      if (sel && sel.rangeCount > 0) {
-        caretOffset = getCaretCharOffset(editor);
-      }
-
-      // rawText를 파싱해서 HTML 생성
-      editor.innerHTML = buildHTML(rawText);
-
-      // 커서 복원
-      restoreCaretByOffset(editor, caretOffset);
-    }
-
-    // rawText를 토큰으로 파싱 → HTML 문자열 반환
+    // ─── 인라인 LaTeX 에디터 ─────────────────────────────────────────
     function buildHTML(text) {
-      // $$...$$ 먼저, $...$ 다음 순으로 파싱
       const tokens = [];
       let i = 0;
       while (i < text.length) {
@@ -588,350 +521,316 @@
             continue;
           }
         }
-        // 일반 텍스트
         const next = text.indexOf('$', i);
         const chunk = next === -1 ? text.slice(i) : text.slice(i, next);
         if (chunk) tokens.push({ type: 'text', src: chunk });
         i = next === -1 ? text.length : next;
       }
-
       return tokens.map(tok => {
-        if (tok.type === 'text') {
-          return escapeHtml(tok.src);
-        }
+        if (tok.type === 'text') return escHtml(tok.src);
         try {
-          const rendered = katex.renderToString(tok.src, {
-            throwOnError: false,
-            displayMode: tok.display
-          });
+          const rendered = katex.renderToString(tok.src, { throwOnError: false, displayMode: tok.display });
           const cls = tok.display ? 'math-chip display-mode' : 'math-chip';
           const raw = (tok.display ? '$$' : '$') + tok.src + (tok.display ? '$$' : '$');
-          return `<span class="${cls}" data-raw="${escapeAttr(raw)}" contenteditable="false">${rendered}</span>`;
+          return `<span class="${cls}" data-raw="${escAttr(raw)}" contenteditable="false">${rendered}</span>`;
         } catch(e) {
-          return escapeHtml((tok.display ? '$$' : '$') + tok.src + (tok.display ? '$$' : '$'));
+          return escHtml((tok.display ? '$$' : '$') + tok.src + (tok.display ? '$$' : '$'));
         }
       }).join('');
     }
+    function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'); }
+    function escAttr(s) { return s.replace(/"/g,'&quot;'); }
 
-    function escapeHtml(s) {
-      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-    }
-    function escapeAttr(s) {
-      return s.replace(/"/g, '&quot;');
+    function renderEditor() {
+      const editor = document.getElementById('math-editor');
+      const offset = getCaretOffset(editor);
+      editor.innerHTML = buildHTML(rawText);
+      restoreCaret(editor, offset);
     }
 
-    // DOM → rawText 추출 (수식 칩은 data-raw로, 텍스트 노드는 그대로)
-    function extractRawText(editor) {
-      let result = '';
-      function walk(node) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          result += node.textContent;
-        } else if (node.nodeType === Node.ELEMENT_NODE) {
-          if (node.dataset && node.dataset.raw) {
-            result += node.dataset.raw;
-          } else if (node.tagName === 'BR') {
-            result += '\n';
-          } else {
-            for (const child of node.childNodes) walk(child);
-          }
+    function extractRaw(editor) {
+      let r = '';
+      function walk(n) {
+        if (n.nodeType === Node.TEXT_NODE) { r += n.textContent; }
+        else if (n.nodeType === Node.ELEMENT_NODE) {
+          if (n.dataset?.raw) { r += n.dataset.raw; }
+          else if (n.tagName === 'BR') { r += '\n'; }
+          else { for (const c of n.childNodes) walk(c); }
         }
       }
       walk(editor);
-      return result;
+      return r;
     }
 
-    // 커서 문자 위치 계산 (rawText 기준)
-    function getCaretCharOffset(editor) {
+    function getCaretOffset(editor) {
       const sel = window.getSelection();
-      if (!sel || !sel.rangeCount) return rawText.length;
-      const range = sel.getRangeAt(0);
-      const preRange = range.cloneRange();
-      preRange.selectNodeContents(editor);
-      preRange.setEnd(range.endContainer, range.endOffset);
-
-      let offset = 0;
-      function walk(node) {
-        if (node === range.endContainer) return true;
-        if (node.nodeType === Node.TEXT_NODE) {
-          if (preRange.toString().length > offset) {
-            offset += node.textContent.length;
-          }
-          return false;
-        }
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          if (node.dataset && node.dataset.raw) {
-            offset += node.dataset.raw.length;
-            return false;
-          }
-          if (node.tagName === 'BR') { offset += 1; return false; }
-          for (const child of node.childNodes) {
-            if (walk(child)) return true;
-          }
-        }
-        return false;
-      }
-      // 간단하게: preRange.toString() 기반 문자 수 (IME 없을 때 충분)
-      return preRange.toString().replace(/\n/g, '\n').length;
+      if (!sel?.rangeCount) return rawText.length;
+      const range = sel.getRangeAt(0).cloneRange();
+      range.selectNodeContents(editor);
+      range.setEnd(sel.getRangeAt(0).endContainer, sel.getRangeAt(0).endOffset);
+      return range.toString().length;
     }
 
-    // rawText 오프셋으로 커서 복원
-    function restoreCaretByOffset(editor, offset) {
+    function restoreCaret(editor, offset) {
       const sel = window.getSelection();
       if (!sel) return;
-      let remaining = offset;
-      let targetNode = null, targetOffset = 0;
-
-      function walk(node) {
-        if (targetNode) return;
-        if (node.nodeType === Node.TEXT_NODE) {
-          if (remaining <= node.textContent.length) {
-            targetNode = node;
-            targetOffset = remaining;
-          } else {
-            remaining -= node.textContent.length;
-          }
-        } else if (node.nodeType === Node.ELEMENT_NODE) {
-          if (node.dataset && node.dataset.raw) {
-            const len = node.dataset.raw.length;
-            if (remaining <= len) {
-              // 칩 뒤에 커서 놓기
-              targetNode = node.parentNode;
-              targetOffset = Array.from(node.parentNode.childNodes).indexOf(node) + 1;
-            } else {
-              remaining -= len;
-            }
+      let rem = offset, tNode = null, tOff = 0;
+      function walk(n) {
+        if (tNode) return;
+        if (n.nodeType === Node.TEXT_NODE) {
+          if (rem <= n.textContent.length) { tNode = n; tOff = rem; }
+          else { rem -= n.textContent.length; }
+        } else if (n.nodeType === Node.ELEMENT_NODE) {
+          if (n.dataset?.raw) {
+            const len = n.dataset.raw.length;
+            if (rem <= len) { tNode = n.parentNode; tOff = [...n.parentNode.childNodes].indexOf(n)+1; }
+            else { rem -= len; }
             return;
           }
-          if (node.tagName === 'BR') {
-            if (remaining <= 1) {
-              targetNode = node.parentNode;
-              targetOffset = Array.from(node.parentNode.childNodes).indexOf(node) + 1;
-            } else { remaining -= 1; }
+          if (n.tagName === 'BR') {
+            if (rem <= 1) { tNode = n.parentNode; tOff = [...n.parentNode.childNodes].indexOf(n)+1; }
+            else rem -= 1;
             return;
           }
-          for (const child of node.childNodes) walk(child);
+          for (const c of n.childNodes) walk(c);
         }
       }
       walk(editor);
-
-      if (!targetNode) {
-        // 끝으로
-        targetNode = editor;
-        targetOffset = editor.childNodes.length;
-      }
+      if (!tNode) { tNode = editor; tOff = editor.childNodes.length; }
       try {
-        const range = document.createRange();
-        range.setStart(targetNode, targetOffset);
-        range.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(range);
+        const r = document.createRange();
+        r.setStart(tNode, tOff); r.collapse(true);
+        sel.removeAllRanges(); sel.addRange(r);
       } catch(e) {}
     }
 
-    window.addEventListener('load', () => {
-      const editor = document.getElementById('math-editor');
-
-      // IME 조합 추적
-      editor.addEventListener('compositionstart', () => { isComposing = true; });
-      editor.addEventListener('compositionend', () => {
-        isComposing = false;
-        // IME 완성 후 rawText 동기화 → 렌더링
-        rawText = extractRawText(editor);
-        renderEditor();
+    // ─── 이미지 업로드 ────────────────────────────────────────────────
+    async function handleImageFile(file) {
+      if (!file?.type.startsWith('image/')) { alert('이미지 파일만 가능합니다.'); return; }
+      if (file.size > 10 * 1024 * 1024) { alert('10MB 이하 파일만 가능합니다.'); return; }
+      const dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = e => res(e.target.result);
+        r.onerror = rej;
+        r.readAsDataURL(file);
       });
-
-      // 일반 입력
-      editor.addEventListener('input', () => {
-        if (isComposing) return; // IME 조합 중엔 건드리지 않음
-        rawText = extractRawText(editor);
-
-        // $...$ 완성 감지: 닫는 $ 입력 시 렌더링
-        // 조건: rawText에 완성된 $...$ 쌍이 있을 때만 렌더링 (입력 중엔 그대로 둠)
-        const hasComplete = /\$\$[^$]+\$\$|\$[^$\n]+\$/.test(rawText);
-        if (hasComplete) renderEditor();
-      });
-
-      // 붙여넣기: 순수 텍스트로만 (서식 제거, 공백 보존)
-      editor.addEventListener('paste', (e) => {
-        e.preventDefault();
-        const text = e.clipboardData.getData('text/plain');
-        document.execCommand('insertText', false, text);
-      });
-
-      // Enter: 제출 (Shift+Enter 줄바꿈)
-      editor.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          document.getElementById('btn').click();
-        }
-      });
-
-      // 수식 칩 클릭 → 편집 모드 (칩을 raw 텍스트로 되돌리기)
-      editor.addEventListener('click', (e) => {
-        const chip = e.target.closest('.math-chip');
-        if (!chip) return;
-        const raw = chip.dataset.raw || '';
-        // 칩을 텍스트 노드로 교체
-        const textNode = document.createTextNode(raw);
-        chip.replaceWith(textNode);
-        rawText = extractRawText(editor);
-        // 커서를 해당 텍스트 끝으로
-        const range = document.createRange();
-        range.setStart(textNode, textNode.length);
-        range.collapse(true);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-      });
-    });
-
-    function getInputValue() {
-      return rawText.trim();
+      uploadedImageBase64 = dataUrl;
+      uploadedImageMime   = file.type;
+      document.getElementById('imagePreview').src = dataUrl;
+      document.getElementById('imagePreviewWrap').style.display = 'block';
+      document.getElementById('uploadArea').classList.add('has-image');
+      document.querySelector('#uploadArea .upload-title').textContent = '사진 업로드됨 (클릭하여 교체)';
     }
 
-    // 탭
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-      });
-    });
+    // ─── 로딩 스텝 ────────────────────────────────────────────────────
+    const STEP_ICONS = {
+      wolfram: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>`,
+      gpt:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>`,
+      gemini:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+      verify:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`,
+    };
+    const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 
+    function setStep(id, state, desc) {
+      const icon  = document.getElementById(`step-${id}-icon`);
+      const title = document.getElementById(`step-${id}-title`);
+      const descEl= document.getElementById(`step-${id}-desc`);
+      icon.className = `step-icon ${state}`;
+      title.className = `step-title${state === 'waiting' ? ' waiting' : ''}`;
+      if (desc) descEl.textContent = desc;
+      descEl.className = `step-desc${state === 'waiting' ? ' waiting' : ''}`;
+      if (state === 'running') icon.innerHTML = '<div class="spin-ring"></div>';
+      else if (state === 'done') icon.innerHTML = CHECK_ICON;
+      else if (state === 'done-purple') { icon.className = 'step-icon done-purple'; icon.innerHTML = CHECK_ICON; }
+      else icon.innerHTML = STEP_ICONS[id] || '';
+    }
+
+    function resetSteps() {
+      ['wolfram','gpt','gemini','verify'].forEach(id => setStep(id, 'waiting', null));
+      document.getElementById('step-wolfram-desc').textContent = '수식을 계산 엔진에 전송합니다';
+      document.getElementById('step-gpt-desc').textContent    = 'OpenRouter GPT가 문제를 분석합니다';
+      document.getElementById('step-gemini-desc').textContent = 'Gemini가 독립적으로 풀이합니다';
+      document.getElementById('step-verify-desc').textContent = 'Gemini가 두 풀이를 비교·검증합니다';
+    }
+
+    // ─── KaTeX ────────────────────────────────────────────────────────
     function renderMath(el) {
       renderMathInElement(el, {
         delimiters: [
           { left: '$$', right: '$$', display: true },
           { left: '$', right: '$', display: false }
         ],
-        throwOnError: false,
-        strict: false
+        throwOnError: false, strict: false
       });
     }
-
-    // ### 헤딩 지원 + KaTeX 렌더링
     function renderOutput(el, text) {
       el.innerHTML = (text || '').split('\n').map(line => {
-        if (/^###\s*/.test(line)) {
-          const content = line.replace(/^###\s*/, '');
-          return `<div class="out-heading">${content}</div>`;
-        }
+        if (/^###\s*/.test(line)) return `<div class="out-heading">${line.replace(/^###\s*/,'')}</div>`;
         return `<span>${line}</span><br>`;
       }).join('');
       renderMath(el);
     }
-
     function extractFinalAnswer(text) {
       const lines = text.split('\n');
       for (let i = 0; i < lines.length; i++) {
-        if (lines[i].includes('최종 결과') || lines[i].includes('최종결과')) {
-          const next = lines.slice(i + 1).find(l => l.trim().length > 0);
+        if (/최종\s*결과/.test(lines[i])) {
+          const next = lines.slice(i+1).find(l => l.trim().length > 0);
           if (next) return next.trim();
         }
       }
-      const eqLines = lines.filter(l => l.includes('='));
-      return eqLines.length > 0 ? eqLines[eqLines.length - 1].trim() : '';
+      const eq = lines.filter(l => l.includes('='));
+      return eq.length ? eq[eq.length-1].trim() : '';
     }
 
-    // 로딩 스텝 상태 변경
-    function setStep(id, state, descText) {
-      const icon = document.getElementById(`step-${id}-icon`);
-      const title = document.getElementById(`step-${id}-title`);
-      const desc = document.getElementById(`step-${id}-desc`);
+    // ─── 이벤트 등록 ─────────────────────────────────────────────────
+    window.addEventListener('load', () => {
+      const editor    = document.getElementById('math-editor');
+      const uploadArea= document.getElementById('uploadArea');
+      const fileInput = document.getElementById('image-file-input');
+      const removeBtn = document.getElementById('imageRemoveBtn');
 
-      icon.className = `step-icon ${state}`;
-      title.className = `step-title ${state === 'waiting' ? 'waiting' : ''}`;
-      if (descText) desc.innerText = descText;
-      desc.className = `step-desc ${state === 'waiting' ? 'waiting' : ''}`;
-
-      if (state === 'running') {
-        icon.innerHTML = '<div class="spin-ring"></div>';
-      } else if (state === 'done') {
-        icon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
-      } else {
-        // waiting - 원래 아이콘 유지
-      }
-    }
-
-    function resetSteps() {
-      ['wolfram', 'gemini1', 'verify'].forEach(id => {
-        const icon = document.getElementById(`step-${id}-icon`);
-        const title = document.getElementById(`step-${id}-title`);
-        const desc = document.getElementById(`step-${id}-desc`);
-        icon.className = 'step-icon waiting';
-        title.className = 'step-title waiting';
-        desc.className = 'step-desc waiting';
+      editor.addEventListener('compositionstart', () => { isComposing = true; });
+      editor.addEventListener('compositionend', () => {
+        isComposing = false;
+        rawText = extractRaw(editor);
+        renderEditor();
+      });
+      editor.addEventListener('input', () => {
+        if (isComposing) return;
+        rawText = extractRaw(editor);
+        if (/\$\$[^$]+\$\$|\$[^$\n]+\$/.test(rawText)) renderEditor();
+      });
+      editor.addEventListener('paste', e => {
+        e.preventDefault();
+        document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+      });
+      editor.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('btn').click(); }
+      });
+      editor.addEventListener('click', e => {
+        const chip = e.target.closest('.math-chip');
+        if (!chip) return;
+        const textNode = document.createTextNode(chip.dataset.raw || '');
+        chip.replaceWith(textNode);
+        rawText = extractRaw(editor);
+        const range = document.createRange();
+        range.setStart(textNode, textNode.length); range.collapse(true);
+        const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
       });
 
-      // wolfram 아이콘 복원
-      document.getElementById('step-wolfram-icon').innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>`;
-      document.getElementById('step-gemini1-icon').innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
-      document.getElementById('step-verify-icon').innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`;
+      uploadArea.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', e => { if (e.target.files[0]) handleImageFile(e.target.files[0]); });
+      uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+      uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+      uploadArea.addEventListener('drop', e => {
+        e.preventDefault(); uploadArea.classList.remove('drag-over');
+        if (e.dataTransfer.files[0]) handleImageFile(e.dataTransfer.files[0]);
+      });
+      removeBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        uploadedImageBase64 = null; uploadedImageMime = null;
+        document.getElementById('imagePreview').src = '';
+        document.getElementById('imagePreviewWrap').style.display = 'none';
+        uploadArea.classList.remove('has-image');
+        document.querySelector('#uploadArea .upload-title').textContent = '사진 업로드 (선택)';
+        fileInput.value = '';
+      });
 
-      document.getElementById('step-wolfram-desc').innerText = '수식을 계산 엔진에 전송합니다';
-      document.getElementById('step-gemini1-desc').innerText = 'AI가 문제를 단계별로 분석합니다';
-      document.getElementById('step-verify-desc').innerText = '두 결과를 비교해 최종 풀이를 생성합니다';
-    }
+      document.querySelectorAll('.model-chip[data-gpt]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.model-chip[data-gpt]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          selectedGptModel = btn.dataset.gpt;
+        });
+      });
 
-    const btn = document.getElementById('btn');
-    const loadingCard = document.getElementById('loadingCard');
-    const resultArea = document.getElementById('resultArea');
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+          btn.classList.add('active');
+          document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        });
+      });
+    });
 
-    btn.addEventListener('click', async () => {
-      const val = getInputValue();
-      if (!val) return;
+    // ─── 풀이 시작 ────────────────────────────────────────────────────
+    document.getElementById('btn').addEventListener('click', async () => {
+      const val = rawText.trim();
+      if (!val && !uploadedImageBase64) { alert('문제를 입력하거나 사진을 업로드하세요.'); return; }
+
+      const btn = document.getElementById('btn');
+      const loadingCard = document.getElementById('loadingCard');
+      const resultArea  = document.getElementById('resultArea');
 
       btn.disabled = true;
       resultArea.style.display = 'none';
       loadingCard.style.display = 'block';
       resetSteps();
 
-      // 1단계: Wolfram + Gemini 동시 시작
+      // 단계 1·2·3 동시 시작 표시
       setStep('wolfram', 'running', 'WolframAlpha에 계산 요청 중...');
-      setStep('gemini1', 'running', 'Gemini가 문제를 분석하는 중...');
+      setStep('gpt',     'running', `${selectedGptModel} 풀이 중...`);
+      setStep('gemini',  'running', 'Gemini가 독립적으로 풀이 중...');
 
       try {
         const res = await fetch('/api/solve', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: val })
+          body: JSON.stringify({
+            question:     val,
+            imageBase64:  uploadedImageBase64 || null,
+            imageMime:    uploadedImageMime   || null,
+            gptModel:     selectedGptModel,
+          })
         });
 
-        // fetch 완료 → Wolfram & Gemini 완료, 검증 시작
+        // 1·2차 완료
         setStep('wolfram', 'done', '계산 완료');
-        setStep('gemini1', 'done', '초기 풀이 완료');
-        setStep('verify', 'running', 'Gemini가 두 결과를 비교하는 중...');
+        setStep('gpt',     'done', 'GPT 풀이 완료');
+        setStep('gemini',  'done', 'Gemini 풀이 완료');
+        setStep('verify',  'running', 'Gemini가 두 풀이를 교차 검증 중...');
 
         const data = await res.json();
-        setStep('verify', 'done', '검증 완료');
 
+        setStep('verify', 'done-purple', '검증 완료');
         await new Promise(r => setTimeout(r, 400));
         loadingCard.style.display = 'none';
 
-        if (data.error) {
-          alert('오류: ' + data.error);
-        } else {
-          resultArea.style.display = 'block';
+        if (data.error) { alert('오류: ' + data.error); return; }
 
-          const answerText = extractFinalAnswer(data.result || '');
-          document.getElementById('output-answer').innerText = answerText;
-          renderMath(document.getElementById('output-answer'));
+        resultArea.style.display = 'block';
 
-          renderOutput(document.getElementById('output-final'), data.result);
-          renderOutput(document.getElementById('output-gemini'), data.geminiDraft);
+        // 모델 정보 칩
+        const row = document.getElementById('modelInfoRow');
+        row.innerHTML = `
+          <span class="model-info-chip mic-gpt">GPT: ${(data.gptModel||'').split('/')[1]||data.gptModel}</span>
+          <span class="model-info-chip mic-gemini">Gemini: ${(data.geminiModel||'').replace('gemini-','').replace('-preview-05-20','').replace('-preview-05-06','')}</span>
+          <span class="model-info-chip mic-verify">검증: ${(data.verifyModel||'').replace('gemini-','').replace('-preview-05-20','').replace('-preview-05-06','')}</span>
+        `;
 
-          document.getElementById('output-wolfram').innerText = data.wolfram || '';
-          document.getElementById('output-detail').innerText = data.finalPrompt || '';
+        // 최종 답
+        const answerEl = document.getElementById('output-answer');
+        answerEl.innerText = extractFinalAnswer(data.result || '');
+        renderMath(answerEl);
 
-          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-          document.querySelector('[data-tab="final"]').classList.add('active');
-          document.getElementById('tab-final').classList.add('active');
-        }
+        // 각 탭 렌더링
+        renderOutput(document.getElementById('output-final'),  data.result);
+        renderOutput(document.getElementById('output-gpt'),    data.gptDraft);
+        renderOutput(document.getElementById('output-gemini'), data.geminiDraft);
+        document.getElementById('output-wolfram').innerText = data.wolfram || '계산 결과 없음';
+        document.getElementById('output-detail').innerText =
+          `상태: ${data.status}\nGPT 모델: ${data.gptModel}\nGemini 모델: ${data.geminiModel}\n검증 모델: ${data.verifyModel}\n이미지 포함: ${data.hasImage ? '예' : '아니오'}`;
+
+        // 탭 초기화
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector('[data-tab="final"]').classList.add('active');
+        document.getElementById('tab-final').classList.add('active');
+
       } catch (e) {
         loadingCard.style.display = 'none';
-        alert('연결 오류가 발생했습니다.');
+        alert('연결 오류: ' + e.message);
       } finally {
         btn.disabled = false;
       }
